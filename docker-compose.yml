@@ -1,0 +1,16 @@
+version: "3"
+
+services:
+ 
+  compras:
+    build: .
+    command: python main.py
+    ports:
+      - "8006:8006"
+    networks:
+      - backend
+      
+networks:
+  backend:
+    name: backend
+    driver: bridge
