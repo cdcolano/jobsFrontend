@@ -17,9 +17,11 @@ from jose import jwt,JWTError
 from fastapi.responses import HTMLResponse
 import shutil
 import requests
+from databases import Database
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 import pymongo
+from pymongo import MongoClient
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.security import OAuth2PasswordBearer
 import re
@@ -34,13 +36,24 @@ REFRESH_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 7 days
 ALGORITHM = "HS256"
 JWT_SECRET_KEY = "gfg_jwt_secret_key"
 
-client = pymongo.MongoClient("mongodb+srv://deusto:deusto@cluster0.knpxqxl.mongodb.net/prendas?retryWrites=true&w=majority")
-db = client.Comercial
+index = pymongo.MongoClient("mongodb+srv://deusto:deusto@cluster0.knpxqxl.mongodb.net/prendas?retryWrites=true&w=majority")
+ 
+# Select your database
+db = client["your_database"]
+
+# Select your collection
+collection = db["your_collection"]
+
+# Load all documents from the collection into memory
+all_documents = collection.find({})
 
 origins = [
     "http://localhost:3000",
     "localhost:3000"
 ]
+
+
+
 
 
 def tfidf(query, positional_index, stopwords):
@@ -77,12 +90,21 @@ def tfidf(query, positional_index, stopwords):
     sorted_keys = keys[sorted_indices]
     sorted_values = values[sorted_indices]
     sorted_values=np.round(sorted_values,4)
-    return (zip(sorted_keys, sorted_values))
+    return sorted_keys
 
 #for i, b in tfidf("wink drink ink", positional_index, stopwords):
 #    print(i,b)
 
 app = FastAPI(title="Gateway", openapi_url="/openapi.json")
+
+
+@app.on_event("startup")
+async def startup():
+    await database.connect()
+
+@app.on_event("shutdown")
+async def shutdown():
+    await database.disconnect()
 
 api_router = APIRouter()
 origins=["*"]
@@ -94,6 +116,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"]
 )
+
+async def search_jobs(query: str):
+    # Run your TF-IDF program to get relevant job IDs
+    job_ids = tfidf(query)
+
+    # Now, query the database for these job IDs
+    query = "SELECT * FROM Jobs WHERE ID IN :ids"
+    return await database.fetch_all(query=query, values={"ids": tuple(job_ids)})
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="http://localhost:4000/clientes/signin" )
