@@ -1,16 +1,19 @@
-version: "3"
+version: '3.8'
 
 services:
- 
-  compras:
-    build: .
-    command: python main.py
-    ports:
-      - "8006:8006"
-    networks:
-      - backend
-      
-networks:
+
   backend:
-    name: backend
-    driver: bridge
+    build: ./services/backend
+    ports:
+      - 5001:5001
+    volumes:
+      - ./services/backend:/app
+    command: uvicorn src.main:app --reload --host 0.0.0.0 --port 5001
+
+  frontend:
+      build: ./services/frontend
+      volumes:
+        - './services/frontend:/app'
+        - '/app/node_modules'
+      ports:
+        - 8000:8000
