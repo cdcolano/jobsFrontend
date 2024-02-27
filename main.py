@@ -31,7 +31,14 @@ import numpy as np
 from urllib.parse import quote_plus
 import psycopg2
 from tqdm import tqdm
+from dateutil import parser
 
+
+hostname = 'ms0806.utah.cloudlab.us'
+database = 'jobs_db'
+username = 'root'
+port = 5432
+password = 'root'  # It's not recommended to hardcode passwords in your scripts
 
 response_404 = {404: {"description": "Item not found"}}
 response_403= {403:{"description": "Error en el inicio de sesion"}}
@@ -54,11 +61,13 @@ JWT_SECRET_KEY = "gfg_jwt_secret_key"
 
 N_DOCS=0
 
-connection = psycopg2.connect(user="postgres",
-                                  password="pass",
-                                  host="127.0.0.1",
-                                  port="5432",
-                                  database="JOBS")
+connection = psycopg2.connect(
+        host=hostname,
+        dbname=database,
+        user=username,
+        password=password,
+        port=port
+    )
 
 query=f"""
        SELECT Count(*) FROM jobs;
@@ -69,15 +78,25 @@ query=f"""
 cursor = connection.cursor()
 cursor.execute(query)
 N = cursor.fetchone()[0]  # Fetch the JSON result
+print(N)
 
 query=f"""
-       SELECT ID FROM jobs;
+       SELECT json_agg(ID) FROM jobs;
 
     """
 
 cursor.execute(query)
-DOC_IDS= cursor.fetchall()
+DOC_IDS= cursor.fetchone()[0] #DOC_IDS could be replace to ID2DATE.keys() if memory ussage is bad
 
+
+query = """
+SELECT json_object_agg(ID, date_posted) FROM jobs;
+"""
+cursor = connection.cursor()
+cursor.execute(query)
+result=cursor.fetchall()
+print(result)
+ID2DATE = cursor.fetchone()[0] #store the ID to Date to consider dates in the retrieval
 cursor.close()
 
 origins = [
@@ -148,17 +167,36 @@ def pre_process(query):
     tokens = [stemmer.stem(word) for word in query.split()]
     return tokens
 
+def add_dates_to_score(Scores, connection):
+    id_array=list(Scores.keys())
+    query = """
+    SELECT id, date_posted
+    FROM jobs
+    WHERE id = ANY(%s);
+    """
+
+    cursor = connection.cursor()
+    cursor.execute(query, (id_array,))
+    results = cursor.fetchall()
+    print(results)
+
 def optimized_tfidf(query, positional_index, stopwords, N_DOCS):
     tokens=pre_process(query)
     Scores = {}
+    current_time=time.time()
     for token in tokens:
         postings = positional_index.get(token)
         if postings:
             df = postings['df']
             idf = np.log10(N_DOCS / df)
             for doc_id, idx_term in postings['posting_list'].items():
+                parsed_date = parser.parse(ID2DATE[doc_id], dayfirst=True) #This would work but extremelly inefficient
+                date_factor=current_time - parsed_date
+                days_diff = date_factor.days
+                date_factor = 1 / (days_diff + 1)  # Adding 1 to avoid division by zero and ensure recent docs have higher factor
                 tf = 1 + np.log10(len(idx_term))
-                Scores[doc_id] = Scores.get(doc_id, 0) + tf * idf
+                Scores[doc_id] = Scores.get(doc_id, 0) + tf * idf * date_factor
+
 
     #sorted_docs = sorted(Scores.items(), key=lambda x: x[1], reverse=True)
     sorted_docs= sorted(Scores, key=Scores.get, reverse=True)
@@ -398,11 +436,48 @@ async def retrieve_jobs(page: int = Query(1, description="Page number of the res
     return result
 
 
+def test_jobs(page: int = Query(1, description="Page number of the results"),
+                        number_per_page: int = Query(10, description="Number of results per page")):
+    # Calculate start and end indexes for the slice of documents needed
+    start_index = (page - 1) * number_per_page
+    end_index = start_index + number_per_page
+
+    # Get the document indexes for the current page
+    document_indexes_needed = CURRENT_RESULT[start_index:end_index]
+
+    # Convert the list of indexes to a format suitable for SQL query ('IN' clause)
+    # Ensure each index is treated as a string literal in the query
+    indexes_str = ','.join([f"'{index}'" for index in document_indexes_needed])
+    # query = f"""
+    #     SELECT json_agg(docs.* ORDER BY idx)
+    #     FROM (
+    #     SELECT j.*, idx
+    #     FROM unnest(ARRAY[{indexes_str}]) WITH ORDINALITY AS x(idx)
+    #     JOIN jobs j ON j.id = x.idx
+    #     ) AS docs;
+    #     """
+    query=f"""
+        SELECT json_agg(j ORDER BY j.idx)
+        FROM (
+            SELECT j.*, x.idx
+            FROM unnest(ARRAY[{indexes_str}]::text[]) WITH ORDINALITY AS x(id, idx)
+            JOIN jobs j ON j.id = x.id
+        ) AS j;
+
+    """
+
+    # Execute the query
+    cursor = connection.cursor()
+    cursor.execute(query)
+    result = cursor.fetchone()[0]  # Fetch the JSON result
+
+    cursor.close()
+
+    # `result` is already a JSON string; return it directly
+    return result
+
     
 
-
-
-   
 
 
 
@@ -413,46 +488,10 @@ if __name__ == "__main__":
     # Use this for debugging purposes only
     import uvicorn
     #print(positional_index)
-    query='#15(dow,stocks)'
+    
     uvicorn.run(app, host="0.0.0.0", port=8006, log_level="debug")
-    start=time.time()
-   
-    jobs=["ea1jobs-119731924",
-"ea1jobs-119768764",
-"ea1jobs-119732017",
-"ea1jobs-119768865",
-"ea1jobs-119768868",
-"ea1jobs-119768922",
-"ea1jobs-119768984",
-"ea1jobs-119768985",
-"ea1jobs-119809567",
-"ea1jobs-119809571",
-"ea1jobs-119809647",
-"ea1jobs-119809653",
-"ea1jobs-119809654",
-"ea1jobs-119809655",
-"ea1jobs-119809670",
-"ea1jobs-119809860",
-"ea1jobs-119809865",
-"ea1jobs-119809870",
-"ea1jobs-119850379",
-"ea1jobs-119850500",
-"ea1jobs-119850519",
-"ea1jobs-119850545",
-"ea1jobs-119890143",
-"ea1jobs-119890150",
-"ea1jobs-119890163",
-"ea1jobs-119890166",
-"ea1jobs-119890167",
-"ea1jobs-119890192",
-"ea1jobs-119890195",
-"ea1jobs-119890217"]
-    result=retrieve_jobs(jobs,1,20,connection)
-    #results1=route_query(query)
-    end=time.time()
-    print(end-start)
-    print(result[0])
-    print("TIEMPO DE CARGA")
-    print(end_time_load-start_time_load)
-    #print(results1)
+    
+        # SQL query to retrieve table schema information
+    # SQL query to fetch IDs (assuming IDs are stored in a column named 'id' in the 'jobs' table)
 
+   
