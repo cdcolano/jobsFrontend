@@ -32,6 +32,7 @@ from urllib.parse import quote_plus
 import psycopg2
 from tqdm import tqdm
 from dateutil import parser
+from datetime import datetime
 
 
 hostname = 'ms0806.utah.cloudlab.us'
@@ -180,6 +181,20 @@ def add_dates_to_score(Scores, connection):
     results = cursor.fetchall()
     print(results)
 
+parsed_cache = {'': datetime(year=1900, month=1, day=1)} #Cache for quixcker parsing critical for timesaving in queries
+
+def parse_date(date_str, dayfirst=True):
+    if date_str in parsed_cache:  # Return cached result if available
+        return parsed_cache[date_str]
+    try:
+        # Parse the date with dayfirst option
+        parsed_date = parser.parse(date_str, dayfirst=dayfirst)
+        parsed_cache[date_str] = parsed_date  # Cache the result
+        return parsed_date
+    except ValueError:
+        print(f"Could not parse date: {date_str}")
+        return None
+
 def optimized_tfidf(query, positional_index, stopwords, N_DOCS):
     tokens=pre_process(query)
     Scores = {}
@@ -190,7 +205,7 @@ def optimized_tfidf(query, positional_index, stopwords, N_DOCS):
             df = postings['df']
             idf = np.log10(N_DOCS / df)
             for doc_id, idx_term in postings['posting_list'].items():
-                parsed_date = parser.parse(ID2DATE[doc_id], dayfirst=True) #This would work but extremelly inefficient
+                parsed_date = parse_date(ID2DATE[doc_id], dayfirst=True) #This would work but extremelly inefficient
                 date_factor=current_time - parsed_date
                 days_diff = date_factor.days
                 date_factor = 1 / (days_diff + 1)  # Adding 1 to avoid division by zero and ensure recent docs have higher factor
@@ -361,9 +376,7 @@ async def route_query(query: str, N_PAGE: int = Query(30, alias="page")):
         CURRENT_RESULT=boolean_search(positional_index=positional_index, query=query, stopwords=stopwords)
     else:
         CURRENT_RESULT=optimized_tfidf(query, positional_index, stopwords, N_DOCS)
-    retrieve_jobs(1,N_PAGE)
-    return CURRENT_RESULT
-
+    return retrieve_jobs(1,N_PAGE)
 # Example usage
 # sorted_keys = tfidf("your query", positional_index, stopwords, N_DOCS)
 
@@ -374,23 +387,6 @@ async def route_query(query: str, N_PAGE: int = Query(30, alias="page")):
 
 
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="http://localhost:4000/clientes/signin" )
-
-
-async def get_current_user(token: str= Depends(oauth2_scheme)):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, JWT_SECRET_KEY)#, algorithms=[ALGORITHM])
-        userId = payload.get("userId")
-        if userId is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
-    return userId
 
 
 import json
