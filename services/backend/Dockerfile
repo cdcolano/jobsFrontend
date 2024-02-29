@@ -6,12 +6,8 @@ WORKDIR /app
 ENV PATH="${PATH}:/root/.local/bin"
 ENV PYTHONPATH=.
 
-COPY requirements.txt ./
-
-RUN pip3 install --no-cache-dir --upgrade pip
-RUN pip3 install --no-cache-dir -r ./requirements.txt
+COPY requirements.txt .
+RUN pip3 install --upgrade pip
+RUN pip3 install -r ./requirements.txt
 
 COPY src/ .
-#RUN python app/prestart.py
-
-EXPOSE 3000

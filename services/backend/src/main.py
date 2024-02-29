@@ -95,8 +95,8 @@ SELECT json_object_agg(ID, date_posted) FROM jobs;
 """
 cursor = connection.cursor()
 cursor.execute(query)
-result=cursor.fetchall()
-print(result)
+# result=cursor.fetchall()
+# print(result)
 ID2DATE = cursor.fetchone()[0] #store the ID to Date to consider dates in the retrieval
 cursor.close()
 
