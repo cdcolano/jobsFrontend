@@ -137,16 +137,17 @@ client = MongoClient(uri)
 
 
 db=client.INDEX_DB
+collection=db['INDEX']
 
-total_documents = db['INDEX'].count_documents({})
+# total_documents = collection.count_documents({})
 
-start_time_load=time.time()
-results=db['INDEX'].find({})
-positional_index = {}
-for document in tqdm(results, total=total_documents):
-    positional_index[document['_id']] = document
-#positional_index = {document['_id']: document for document in results}
-end_time_load=time.time()
+# start_time_load=time.time()
+# results=collection.find({})
+# positional_index = {}
+# for document in tqdm(results, total=total_documents):
+#     positional_index[document['_id']] = document
+# #positional_index = {document['_id']: document for document in results}
+# end_time_load=time.time()
 
 def getAllDocs(positional_index):
     all_doc_ids = set()
@@ -217,11 +218,12 @@ def parse_date(date_str, dayfirst=True):
         print(f"Could not parse date: {date_str}")
         return None
 
-def optimized_tfidf(query, positional_index, N_DOCS):
+def optimized_tfidf(query, N_DOCS):
     tokens=desp_preprocessing(query)
     Scores = {}
     current_time=time.time()
     for token in tokens:
+        postings= collection.find_one({"_id": token})
         postings = positional_index.get(token)
         if postings:
             df = postings['df']
@@ -282,9 +284,17 @@ def tfidf(query, positional_index, stopwords, N_DOCS):
     sorted_docs = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)
     return sorted_docs
 
-def perform_phrase_search(query, positional_index):
+def perform_phrase_search(query):
    # tokens=pre_process(query)
-    postings = [positional_index.get(token, {"posting_list":{}})['posting_list'] for token in query] #get postings for tokens
+    postings = []
+    for token in query:
+        # Fetch the document for the current token from MongoDB
+        document = collection.find_one({"_id": token})
+        if document:
+            postings.append(document.get('posting_list', {}))
+        else:
+            # If the token is not found, append an empty postings list
+            postings.append({})
     # Display Result
     common_doc_ids = set.intersection(*(set(posting.keys()) for posting in postings)) #perform intersection to get common docs
 
@@ -299,9 +309,18 @@ def perform_phrase_search(query, positional_index):
                 break
     return final_doc_ids
 
-def perform_proximity_search(tokens, PROX, positional_index):
+def perform_proximity_search(tokens, PROX):
     #tokens=pre_process(tokens)
-    postings = [positional_index.get(token, {"posting_list":{}})['posting_list'] for token in tokens]#get postings for tokens
+    
+    postings = []
+    for token in tokens:
+        # Fetch the document for the current token from MongoDB
+        document = collection.find_one({"_id": token})
+        if document:
+            postings.append(document.get('posting_list', {}))
+        else:
+            # If the token is not found, append an empty postings list
+            postings.append({})
     # Display Result
     common_doc_ids = set.intersection(*(set(posting.keys()) for posting in postings)) #perform intersection to get common docs
 
@@ -353,7 +372,7 @@ def desp_preprocessing_boolean(text):
     
     return words
 #boolean search function
-def boolean_search(positional_index, query):
+def boolean_search(query):
     ######## IMPORTANT#####
     #NOT REMOVING #,(,),""
     #CHECKING IF #WORK
@@ -380,14 +399,14 @@ def boolean_search(positional_index, query):
         elif token == "(":
                 proximity=True #next tokens should be added to a list and perform proximity search over that list
         elif token ==")":#proximity search should be performed
-                current_result&=perform_proximity_search(word_for_phrase, distance, positional_index)
+                current_result&=perform_proximity_search(word_for_phrase, distance)
                 word_for_phrase.clear()
                 proximity=False
         elif token == '"':
             if (not phrase): #start of the phrase is detected
                 phrase=True
             else: #end of the phrase is detected search is performed
-                current_result&=perform_phrase_search(word_for_phrase, positional_index)
+                current_result&=perform_phrase_search(word_for_phrase)
                 word_for_phrase.clear()
                 phrase=False
         elif  (phrase or proximity):
@@ -396,6 +415,7 @@ def boolean_search(positional_index, query):
                 distance=int(token)  #distance is set
                 hashtag=False
         else:
+            dict_word= collection.find_one({"_id": token})
             dict_word=positional_index.get(token) 
             if dict_word is not None: #word exist in the postings
                 term_postings = set(dict_word['posting_list'].keys())
@@ -420,10 +440,10 @@ def boolean_search(positional_index, query):
 async def route_query(query: str, N_PAGE: int = Query(30, alias="page")):
     pattern = r'\b(AND|OR|NOT)\b|["#]'
     if re.search(pattern, query):
-        CURRENT_RESULT=boolean_search(positional_index=positional_index, query=query)
+        CURRENT_RESULT=boolean_search(query=query)
     else:
-        CURRENT_RESULT=optimized_tfidf(query, positional_index, N_DOCS)
-    return retrieve_jobs(1,N_PAGE)
+        CURRENT_RESULT=optimized_tfidf(query, N_DOCS)
+    return await retrieve_jobs(1,N_PAGE)
 # Example usage
 # sorted_keys = tfidf("your query", positional_index, stopwords, N_DOCS)
 
@@ -467,7 +487,7 @@ async def retrieve_jobs(page: int, number_per_page: int):
     additional_docs_needed = number_per_page - len(documents_fetched)
     
     # If more documents are needed, fetch additional documents
-    while additional_docs_needed > 0 or start_index>=current_length:
+    while additional_docs_needed > 0 and start_index<current_length:
         pagination_offset+=additional_docs_needed
         # Adjust start and end indexes to fetch more documents
         new_start_index = end_index
@@ -583,7 +603,8 @@ if __name__ == "__main__":
     #print(positional_index)
     
     uvicorn.run(app, host="0.0.0.0", port=8006, log_level="debug")
-    
+    CURRENT_RESULT=DOC_IDS[:10000]
+    print(test_jobs(2, 20))
         # SQL query to retrieve table schema information
     # SQL query to fetch IDs (assuming IDs are stored in a column named 'id' in the 'jobs' table)
 
