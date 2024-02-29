@@ -1,5 +1,11 @@
 FROM python:3.8-slim-buster
 
+RUN apt-get update && \
+    apt-get -y install g++ && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN ln -s /usr/libc/gcc/aarch64-linux-gnu/8/cc1plus /usr/local/bin/
+
 RUN mkdir app
 WORKDIR /app
 
