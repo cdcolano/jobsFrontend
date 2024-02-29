@@ -31,7 +31,25 @@ import numpy as np
 from urllib.parse import quote_plus
 import psycopg2
 from tqdm import tqdm
+from dateutil import parser
+from datetime import datetime
+import regex
+from nltk.corpus import stopwords
+from nltk.stem.snowball import SnowballStemmer
+import re
+import nltk
+from langdetect import detect
+from langcodes import Language
+import gc
 
+nltk.download('stopwords')
+
+
+hostname = 'ms0806.utah.cloudlab.us'
+database = 'jobs_db'
+username = 'root'
+port = 5432
+password = 'root'  # It's not recommended to hardcode passwords in your scripts
 
 response_404 = {404: {"description": "Item not found"}}
 response_403= {403:{"description": "Error en el inicio de sesion"}}
@@ -54,11 +72,13 @@ JWT_SECRET_KEY = "gfg_jwt_secret_key"
 
 N_DOCS=0
 
-connection = psycopg2.connect(user="postgres",
-                                  password="pass",
-                                  host="127.0.0.1",
-                                  port="5432",
-                                  database="JOBS")
+connection = psycopg2.connect(
+        host=hostname,
+        dbname=database,
+        user=username,
+        password=password,
+        port=port
+    )
 
 query=f"""
        SELECT Count(*) FROM jobs;
@@ -69,15 +89,23 @@ query=f"""
 cursor = connection.cursor()
 cursor.execute(query)
 N = cursor.fetchone()[0]  # Fetch the JSON result
+print(N)
 
 query=f"""
-       SELECT ID FROM jobs;
+       SELECT json_agg(ID) FROM jobs;
 
     """
 
 cursor.execute(query)
-DOC_IDS= cursor.fetchall()
+DOC_IDS= cursor.fetchone()[0] #DOC_IDS could be replace to ID2DATE.keys() if memory ussage is bad
 
+
+query = """
+SELECT json_object_agg(ID, date_posted) FROM jobs;
+"""
+cursor = connection.cursor()
+cursor.execute(query)
+ID2DATE = cursor.fetchone()[0] #store the ID to Date to consider dates in the retrieval
 cursor.close()
 
 origins = [
@@ -128,37 +156,84 @@ def getAllDocs(positional_index):
 
 
 
-
-
-
-with open('./stopwords.txt', "r+",encoding='utf-8-sig') as file:
-    stopwords=file.read()
-
-
 CURRENT_RESULT=[]
+compiled_patterns = {}
+stemmers = {}
+stemmed_languages = ["arabic","danish","dutch","english","finnish","french","german","hungarian","italian","norwegian","portuguese","romanian","russian","spanish","swedish"]
+non_alpha_pattern = regex.compile(r'\p{P}') 
 
-pattern_non_alpha = re.compile(r'[^a-zA-Z" ]')
-pattern_stopwords = re.compile(r'\b(?:' + '|'.join(stopwords) + r')\b')
+def desp_preprocessing(text):
+    try:
+        language_code = detect(text)
+        language_full_form = Language.get(language_code).language_name().lower()
+    except:
+        language_full_form = 'unknown'
 
-def pre_process(query):
-    query = pattern_non_alpha.sub(' ', query.lower())
-    query = pattern_stopwords.sub(" ", query)
+    text = non_alpha_pattern.sub(" ", text)
 
-    stemmer = PorterStemmer()
-    tokens = [stemmer.stem(word) for word in query.split()]
-    return tokens
+    if language_full_form in stemmed_languages:
+        stopwords_by_language = set(stopwords.words(language_full_form))
+        
+        if language_full_form not in compiled_patterns:
+            pattern = r'\b(?:' + '|'.join(map(re.escape, stopwords_by_language)) + r')\b'
+            compiled_patterns[language_full_form] = re.compile(pattern)
+        
+        text = compiled_patterns[language_full_form].sub(' ', text)
+        
+        if language_full_form not in stemmers:
+            stemmers[language_full_form] = SnowballStemmer(language_full_form)
+        stemmer = stemmers[language_full_form]
+        
+        words = [stemmer.stem(token) for token in text.split()]
+    else:
+        words = text.split()
+    
+    return words
 
-def optimized_tfidf(query, positional_index, stopwords, N_DOCS):
-    tokens=pre_process(query)
+def add_dates_to_score(Scores, connection):
+    id_array=list(Scores.keys())
+    query = """
+    SELECT id, date_posted
+    FROM jobs
+    WHERE id = ANY(%s);
+    """
+
+    cursor = connection.cursor()
+    cursor.execute(query, (id_array,))
+    results = cursor.fetchall()
+    print(results)
+
+parsed_cache = {'': datetime(year=1900, month=1, day=1)} #Cache for quixcker parsing critical for timesaving in queries
+
+def parse_date(date_str, dayfirst=True):
+    if date_str in parsed_cache:  # Return cached result if available
+        return parsed_cache[date_str]
+    try:
+        # Parse the date with dayfirst option
+        parsed_date = parser.parse(date_str, dayfirst=dayfirst)
+        parsed_cache[date_str] = parsed_date  # Cache the result
+        return parsed_date
+    except ValueError:
+        print(f"Could not parse date: {date_str}")
+        return None
+
+def optimized_tfidf(query, positional_index, N_DOCS):
+    tokens=desp_preprocessing(query)
     Scores = {}
+    current_time=time.time()
     for token in tokens:
         postings = positional_index.get(token)
         if postings:
             df = postings['df']
             idf = np.log10(N_DOCS / df)
             for doc_id, idx_term in postings['posting_list'].items():
+                parsed_date = parse_date(ID2DATE[doc_id], dayfirst=True) #This would work but extremelly inefficient
+                date_factor=current_time - parsed_date
+                days_diff = date_factor.days
+                date_factor = 1 / (days_diff + 1)  # Adding 1 to avoid division by zero and ensure recent docs have higher factor
                 tf = 1 + np.log10(len(idx_term))
-                Scores[doc_id] = Scores.get(doc_id, 0) + tf * idf
+                Scores[doc_id] = Scores.get(doc_id, 0) + tf * idf * date_factor
+
 
     #sorted_docs = sorted(Scores.items(), key=lambda x: x[1], reverse=True)
     sorted_docs= sorted(Scores, key=Scores.get, reverse=True)
@@ -241,25 +316,50 @@ def perform_proximity_search(tokens, PROX, positional_index):
                 break
     return final_doc_ids
 
+non_alpha_pattern_boolean = regex.compile(r'[^\w\s#"()]+')
+logical_operators = {'AND', 'OR', 'NOT'}
 
+def desp_preprocessing_boolean(text):
+    try:
+        language_code = detect(text)
+        language_full_form = Language.get(language_code).language_name().lower()
+    except:
+        language_full_form = 'unknown'
+    
+    # Removing punctuation except for '#'
+    text = non_alpha_pattern_boolean.sub(" ", text)
+
+    if language_full_form in stemmed_languages:
+        stopwords_by_language = set(stopwords.words(language_full_form))
+        # Preparing regex pattern without altering 'AND', 'NOT', 'OR'
+        if language_full_form not in compiled_patterns:
+            # Exclude 'AND', 'NOT', 'OR' from being treated as stopwords
+            pattern_stopwords = stopwords_by_language - {'AND', 'NOT', 'OR'}
+            pattern = r'\b(?:' + '|'.join(map(re.escape, pattern_stopwords)) + r')\b'
+            compiled_patterns[language_full_form] = re.compile(pattern)
+        
+        text = compiled_patterns[language_full_form].sub(' ', text)
+        
+        if language_full_form not in stemmers:
+            stemmers[language_full_form] = SnowballStemmer(language_full_form)
+        stemmer = stemmers[language_full_form]
+        
+        # Tokenizing while preserving 'AND', 'NOT', 'OR', and '#'
+        tokens = re.findall(r'(\bAND\b|\bOR\b|\bNOT\b|\b\w+\b|[#"\(\)])', text)
+        words = [token if token in logical_operators else stemmer.stem(token) for token in tokens]
+    else:
+        # For languages not supported for stemming, tokenize while preserving specific tokens
+        words = re.findall(r'(\bAND\b|\bOR\b|\bNOT\b|\b\w+\b|[#"\(\)])', text)
+    
+    return words
 #boolean search function
-def boolean_search(positional_index, query, stopwords):
+def boolean_search(positional_index, query):
     ######## IMPORTANT#####
     #NOT REMOVING #,(,),""
     #CHECKING IF #WORK
     #COMPROBAR QUE EL TDIDF SE ORDENA DESCENDENTEMENTE Y ELIMINAR OR AND Y ETC DE LA REGEX
     
-    pattern = r'\b(?!AND\b|OR\b|NOT\b)\w+\b'
-        # Use a lambda function to lower the matched words
-    query = re.sub(pattern, lambda x: x.group().lower(), query)  #query to lowercase except AND OR NOT
-    pattern = re.compile(r'[^a-zA-Z0-9#()" ]') 
-    query=re.sub(pattern, ' ', query) 
-    pattern = r'\b(?!AND\b|OR\b|NOT\b)(' + '|'.join(stopwords) + r')\b' #removing stopwords from query except AND OR NOT 
-    query = re.sub(pattern, " ", query)
-    stemmer = PorterStemmer()
-    pattern = r'\b(?!AND\b|OR\b|NOT\b)\w+\b'
-    query = re.sub(pattern, lambda x: stemmer.stem(x.group()), query) #performing stemming except AND OR NOT
-    tokens= re.findall(r'(\bAND\b|\bOR\b|\bNOT\b|\b\w+\b|["#\(\)])',query)#splitting on spaces and specific operators
+    tokens=desp_preprocessing_boolean(query)
 
     #doc_ids=set(getAllDocs(positional_index)) #if query is empty all docs are retrived
     current_result=DOC_IDS.copy()
@@ -320,12 +420,10 @@ def boolean_search(positional_index, query, stopwords):
 async def route_query(query: str, N_PAGE: int = Query(30, alias="page")):
     pattern = r'\b(AND|OR|NOT)\b|["#]'
     if re.search(pattern, query):
-        CURRENT_RESULT=boolean_search(positional_index=positional_index, query=query, stopwords=stopwords)
+        CURRENT_RESULT=boolean_search(positional_index=positional_index, query=query)
     else:
-        CURRENT_RESULT=optimized_tfidf(query, positional_index, stopwords, N_DOCS)
-    retrieve_jobs(1,N_PAGE)
-    return CURRENT_RESULT
-
+        CURRENT_RESULT=optimized_tfidf(query, positional_index, N_DOCS)
+    return retrieve_jobs(1,N_PAGE)
 # Example usage
 # sorted_keys = tfidf("your query", positional_index, stopwords, N_DOCS)
 
@@ -334,30 +432,104 @@ async def route_query(query: str, N_PAGE: int = Query(30, alias="page")):
 #    print(i,b)
 
 
+def fetch_documents(indexes):
+    indexes_str = ','.join([f"'{index}'" for index in indexes])
+    query=f"""
+        SELECT json_agg(j ORDER BY j.idx)
+        FROM (
+            SELECT j.*, x.idx
+            FROM unnest(ARRAY[{indexes_str}]::text[]) WITH ORDINALITY AS x(id, idx)
+            JOIN jobs j ON j.id = x.id
+        ) AS j;
 
+    """
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="http://localhost:4000/clientes/signin" )
+    # Execute the query
+    cursor = connection.cursor()
+    cursor.execute(query)
+    result = cursor.fetchone()[0]  # Fetch the JSON result
 
+    cursor.close()
+    return result
 
-async def get_current_user(token: str= Depends(oauth2_scheme)):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, JWT_SECRET_KEY)#, algorithms=[ALGORITHM])
-        userId = payload.get("userId")
-        if userId is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
-    return userId
-
+pagination_offset=0
 
 import json
 @app.get("/jobs/")
-async def retrieve_jobs(page: int = Query(1, description="Page number of the results"),
+async def retrieve_jobs(page: int, number_per_page: int):
+    start_index = (page - 1) * number_per_page
+    end_index = start_index + number_per_page
+    
+    
+    document_indexes_needed = CURRENT_RESULT[start_index:end_index]
+    current_length=len(CURRENT_RESULT)
+    documents_fetched = fetch_documents(document_indexes_needed)
+    additional_docs_needed = number_per_page - len(documents_fetched)
+    
+    # If more documents are needed, fetch additional documents
+    while additional_docs_needed > 0 or start_index>=current_length:
+        pagination_offset+=additional_docs_needed
+        # Adjust start and end indexes to fetch more documents
+        new_start_index = end_index
+        new_end_index = new_start_index + additional_docs_needed
+        
+        additional_indexes_needed = CURRENT_RESULT[new_start_index:new_end_index]
+ 
+        additional_documents = fetch_documents(additional_indexes_needed)
+        
+        documents_fetched.extend(additional_documents)
+        additional_docs_needed = number_per_page - len(documents_fetched)
+        
+        # Update buffer size or break condition to avoid infinite loops if needed
+        
+    return documents_fetched
+
+##################################################
+#TODO verify new method
+##################################################
+
+# async def retrieve_jobs(page: int = Query(1, description="Page number of the results"),
+#                         number_per_page: int = Query(10, description="Number of results per page")):
+#     # Calculate start and end indexes for the slice of documents needed
+#     start_index = (page - 1) * number_per_page+pagination_offset
+#     end_index = start_index + number_per_page
+
+#     # Get the document indexes for the current page
+#     document_indexes_needed = CURRENT_RESULT[start_index:end_index]
+
+#     # Convert the list of indexes to a format suitable for SQL query ('IN' clause)
+#     # Ensure each index is treated as a string literal in the query
+#     indexes_str = ','.join([f"'{index}'" for index in document_indexes_needed])
+#     # query = f"""
+#     #     SELECT json_agg(docs.* ORDER BY idx)
+#     #     FROM (
+#     #     SELECT j.*, idx
+#     #     FROM unnest(ARRAY[{indexes_str}]) WITH ORDINALITY AS x(idx)
+#     #     JOIN jobs j ON j.id = x.idx
+#     #     ) AS docs;
+#     #     """
+#     query=f"""
+#         SELECT json_agg(j ORDER BY j.idx)
+#         FROM (
+#             SELECT j.*, x.idx
+#             FROM unnest(ARRAY[{indexes_str}]::text[]) WITH ORDINALITY AS x(id, idx)
+#             JOIN jobs j ON j.id = x.id
+#         ) AS j;
+
+#     """
+
+#     # Execute the query
+#     cursor = connection.cursor()
+#     cursor.execute(query)
+#     result = cursor.fetchone()[0]  # Fetch the JSON result
+
+#     cursor.close()
+
+#     # `result` is already a JSON string; return it directly
+#     return result
+
+
+def test_jobs(page: int = Query(1, description="Page number of the results"),
                         number_per_page: int = Query(10, description="Number of results per page")):
     # Calculate start and end indexes for the slice of documents needed
     start_index = (page - 1) * number_per_page
@@ -397,12 +569,8 @@ async def retrieve_jobs(page: int = Query(1, description="Page number of the res
     # `result` is already a JSON string; return it directly
     return result
 
-
     
 
-
-
-   
 
 
 
@@ -413,46 +581,10 @@ if __name__ == "__main__":
     # Use this for debugging purposes only
     import uvicorn
     #print(positional_index)
-    query='#15(dow,stocks)'
+    
     uvicorn.run(app, host="0.0.0.0", port=8006, log_level="debug")
-    start=time.time()
-   
-    jobs=["ea1jobs-119731924",
-"ea1jobs-119768764",
-"ea1jobs-119732017",
-"ea1jobs-119768865",
-"ea1jobs-119768868",
-"ea1jobs-119768922",
-"ea1jobs-119768984",
-"ea1jobs-119768985",
-"ea1jobs-119809567",
-"ea1jobs-119809571",
-"ea1jobs-119809647",
-"ea1jobs-119809653",
-"ea1jobs-119809654",
-"ea1jobs-119809655",
-"ea1jobs-119809670",
-"ea1jobs-119809860",
-"ea1jobs-119809865",
-"ea1jobs-119809870",
-"ea1jobs-119850379",
-"ea1jobs-119850500",
-"ea1jobs-119850519",
-"ea1jobs-119850545",
-"ea1jobs-119890143",
-"ea1jobs-119890150",
-"ea1jobs-119890163",
-"ea1jobs-119890166",
-"ea1jobs-119890167",
-"ea1jobs-119890192",
-"ea1jobs-119890195",
-"ea1jobs-119890217"]
-    result=retrieve_jobs(jobs,1,20,connection)
-    #results1=route_query(query)
-    end=time.time()
-    print(end-start)
-    print(result[0])
-    print("TIEMPO DE CARGA")
-    print(end_time_load-start_time_load)
-    #print(results1)
+    
+        # SQL query to retrieve table schema information
+    # SQL query to fetch IDs (assuming IDs are stored in a column named 'id' in the 'jobs' table)
 
+   
