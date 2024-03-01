@@ -2,3 +2,5 @@
 .venv/
 services/frontend/node_modules
 __pycache__
+
+.env
