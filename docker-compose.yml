@@ -17,3 +17,12 @@ services:
         - '/app/node_modules'
       ports:
         - 8000:8000
+
+  redis:
+    image: redis:6.2-alpine
+    restart: always
+    ports:
+      - '6379:6379'
+    command: redis-server --save 60 1 --loglevel warning --requirepass $REDIS_PASSWORD
+    volumes:
+      - ./data:/data
