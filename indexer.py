@@ -2,9 +2,11 @@ import os
 import time
 import psycopg2
 import redis
+import tqdm
 
 from preprocessing import preprocess
 from dotenv import load_dotenv
+from multiprocessing import Pool
 
 load_dotenv()
 
@@ -68,20 +70,30 @@ def update_remote_index(index: dict) -> bool:
     return True
 
 
-def index_full_database(offset: int = 0) -> bool:
-    with psycopg2.connect(**PG_CONNECTION_CONFIG) as pg_connection:
-        with pg_connection.cursor() as jp_cursor:
-            jp_cursor.execute(f"""
-            SELECT * FROM {FETCH_ALL_JOBS_VIEW} 
-            WHERE id > {offset} AND id <= {offset + JOBS_POOL_CURSOR_SIZE}  
-            ORDER BY id;
-            """)
-            update_remote_index(build_index(jp_cursor.fetchall()))
-    return True
+def index_database_segment(offset: int = 0) -> float:
+    t = time.perf_counter()
+    while True:
+        try:
+            with psycopg2.connect(**PG_CONNECTION_CONFIG) as pg_connection:
+                with pg_connection.cursor() as cursor:
+                    cursor.execute(f"""
+                    SELECT * FROM {FETCH_ALL_JOBS_VIEW} 
+                    WHERE id > {offset} AND id <= {offset + JOBS_POOL_CURSOR_SIZE}  
+                    ORDER BY id;
+                    """)
+                    data = cursor.fetchall()
+            update_remote_index(build_index(data))
+            del data
+            # print(f"Excecueted batch {offset}-{offset + JOBS_POOL_CURSOR_SIZE} "
+            #       f"Batch execution time:{time.perf_counter() - t:.2f} seconds")
+            return time.perf_counter() - t
+        except Exception as e:
+            print(e)
+            print("PG DB Connection lost, reconnecting ...")
 
 
 if __name__ == '__main__':
-    start_time = time.time()
+    start_time = time.perf_counter()
 
     N = int(JOBS_INDEX_END_POSITION) if JOBS_INDEX_END_POSITION else None
     if not N:
@@ -91,18 +103,9 @@ if __name__ == '__main__':
                 N = int(cursor.fetchone()[0])
                 print(N)
 
-    n_processed_docs = JOB_INDEX_START_POSITION
-    while n_processed_docs < N:
-        t = time.time()
-        try:
-            index_full_database(n_processed_docs)
-            n_processed_docs += JOBS_POOL_CURSOR_SIZE
-        except Exception as e:
-            print(e)
-            print("PG DB Connection lost, reconnecting ...")
-        print(f"{n_processed_docs:7}/{N:7} | "
-              f"{(n_processed_docs / N) * 100:3.2f}% | "
-              f"execution time:{time.time() - t:.2f} seconds"
-              )
+    with Pool() as pool:
+        inputs = range(0, N + JOBS_POOL_CURSOR_SIZE, JOBS_POOL_CURSOR_SIZE)
+        execution_times = [x for x in tqdm.tqdm(pool.imap_unordered(index_database_segment, inputs), total=len(inputs))]
 
-    print("--- %s seconds ---" % (time.time() - start_time))
+    [print(x) for x in execution_times]
+    print("--- %s seconds ---" % (time.perf_counter() - start_time))
