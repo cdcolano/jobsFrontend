@@ -6,7 +6,6 @@ import redis
 from preprocessing import preprocess
 from dotenv import load_dotenv
 
-
 load_dotenv()
 
 PG_CONNECTION_CONFIG = {
@@ -24,10 +23,13 @@ REDIS_CONNECTION_CONFIG = {
     'decode_responses': True,
 }
 
-FETCH_ALL_JOBS_VIEW=os.getenv('FETCH_ALL_JOBS_VIEW')
+FETCH_ALL_JOBS_VIEW = os.getenv('FETCH_ALL_JOBS_VIEW')
 
-JOBS_POOL_CURSOR_NAME = os.getenv('JOBS_POOL_CURSOR_NAME')
-JOBS_POOL_CURSOR_SIZE = int(os.getenv('JOBS_POOL_CURSOR_SIZE'))
+JOBS_POOL_CURSOR_NAME = os.getenv('JOBS_POOL_CURSOR_NAME', default='JOBS_POOL_CURSOR')
+JOBS_POOL_CURSOR_SIZE = int(os.getenv('JOBS_POOL_CURSOR_SIZE', default=2000))
+
+JOB_INDEX_START_POSITION = int(os.getenv('JOBS_INDEX_START_POSITION', default=0))
+JOBS_INDEX_END_POSITION = os.getenv('JOBS_INDEX_END_POSITION', default=None)
 
 
 def build_index(documents: list[list[str]]) -> dict:
@@ -81,20 +83,26 @@ def index_full_database(offset: int = 0) -> bool:
 if __name__ == '__main__':
     start_time = time.time()
 
-    with psycopg2.connect(**PG_CONNECTION_CONFIG) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT Count(id) FROM jobs;")
-            N = int(cursor.fetchone()[0])
-            print(N)
+    N = int(JOBS_INDEX_END_POSITION) if JOBS_INDEX_END_POSITION else None
+    if not N:
+        with psycopg2.connect(**PG_CONNECTION_CONFIG) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT Count(id) FROM jobs;")
+                N = int(cursor.fetchone()[0])
+                print(N)
 
-    n_processed_docs = 0
+    n_processed_docs = JOB_INDEX_START_POSITION
     while n_processed_docs < N:
+        t = time.time()
         try:
             index_full_database(n_processed_docs)
             n_processed_docs += JOBS_POOL_CURSOR_SIZE
-            print(f"{n_processed_docs:7}/{N:7} | {(n_processed_docs / N) * 100:3.2f} %")
         except Exception as e:
             print(e)
             print("PG DB Connection lost, reconnecting ...")
+        print(f"{n_processed_docs:7}/{N:7} | "
+              f"{(n_processed_docs / N) * 100:3.2f}% | "
+              f"execution time:{time.time() - t:.2f} seconds"
+              )
 
     print("--- %s seconds ---" % (time.time() - start_time))

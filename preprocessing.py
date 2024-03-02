@@ -14,7 +14,7 @@ dotenv.load_dotenv()
 nltk.download('stopwords')
 nltk.download('wordnet')
 
-
+# (&nbsp;|&lt;|&gt;|&amp;|&quot;|&apos;|&cent;|&pound;|&yen;|&euro;|&copy;|&reg;|&#768;|&#769;|&#770;|&#771;|&#768;|&#769;|&#770;|&#771;|&#160;|&#60;|&#62;|&#38;|&#34;|&#39;|&#162;|&#163;|&#165;|&#8364;|&#169;|&#174;|\W|\d)+
 TOKENIZATION_REGEX = os.getenv('TOKENIZATION_REGEX')
 
 stemmed_languages = ["arabic", "danish", "dutch", "english", "finnish", "french", "german",
