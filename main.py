@@ -51,13 +51,7 @@ username = 'root'
 port = 5432
 password = 'root'  # It's not recommended to hardcode passwords in your scripts
 
-response_404 = {404: {"description": "Item not found"}}
-response_403= {403:{"description": "Error en el inicio de sesion"}}
-response_401= {401:{"description": "No autorizado"}}
-ACCESS_TOKEN_EXPIRE_MINUTES = 30  # 30 minutes
-REFRESH_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 7 days
-ALGORITHM = "HS256"
-JWT_SECRET_KEY = "gfg_jwt_secret_key"
+
 
 #db_connection = pymongo.MongoClient("mongodb+srv://deusto:deusto@cluster0.knpxqxl.mongodb.net/prendas?retryWrites=true&w=majority")
  
@@ -131,11 +125,11 @@ app.add_middleware(
 USERNAME= quote_plus('ttds')
 PASSWORD = quote_plus('ttds')
 
-uri = 'mongodb+srv://' + USERNAME + ':' + PASSWORD + "@ttds-cluster.vubotvd.mongodb.net/?retryWrites=true&w=majority"
+#uri = 'mongodb+srv://' + USERNAME + ':' + PASSWORD + "@ttds-cluster.vubotvd.mongodb.net/?retryWrites=true&w=majority"
 # Create a new client and connect to the server
-client = MongoClient(uri)
-
-
+#client = MongoClient(uri)
+client = MongoClient('mongodb://localhost:27017/')
+#
 db=client.INDEX_DB
 collection=db['INDEX']
 
@@ -171,7 +165,7 @@ def desp_preprocessing(text):
         language_full_form = 'unknown'
 
     text = non_alpha_pattern.sub(" ", text)
-
+    text=text.lower()
     if language_full_form in stemmed_languages:
         stopwords_by_language = set(stopwords.words(language_full_form))
         
@@ -221,25 +215,27 @@ def parse_date(date_str, dayfirst=True):
 def optimized_tfidf(query, N_DOCS):
     tokens=desp_preprocessing(query)
     Scores = {}
-    current_time=time.time()
+    current_time=datetime.now()
     for token in tokens:
         postings= collection.find_one({"_id": token})
-        postings = positional_index.get(token)
+        #print(postings)
+        #postings = positional_index.get(token)
         if postings:
             df = postings['df']
             idf = np.log10(N_DOCS / df)
-            for doc_id, idx_term in postings['posting_list'].items():
+            for doc_id, idx_term in postings['postings'].items():
                 parsed_date = parse_date(ID2DATE[doc_id], dayfirst=True) #This would work but extremelly inefficient
                 date_factor=current_time - parsed_date
-                days_diff = date_factor.days
-                date_factor = 1 / (days_diff + 1)  # Adding 1 to avoid division by zero and ensure recent docs have higher factor
+                days_diff = abs(date_factor.days)
+                date_factor = 1 / (1 + days_diff / 30)  # Adding 1 to avoid division by zero and ensure recent docs have higher factor
                 tf = 1 + np.log10(len(idx_term))
-                Scores[doc_id] = Scores.get(doc_id, 0) + tf * idf * date_factor
+                Scores[doc_id] = Scores.get(doc_id, 0) + tf * idf* date_factor
 
 
     #sorted_docs = sorted(Scores.items(), key=lambda x: x[1], reverse=True)
     sorted_docs= sorted(Scores, key=Scores.get, reverse=True)
-    #print(sorted_docs)
+    print(sorted_docs[0])
+    print(Scores.get(sorted_docs[0]))
     return  sorted_docs
 
     #return [(doc_id, round(score, 4)) for doc_id, score in sorted_docs]
@@ -257,7 +253,7 @@ def process_token(args):
     if postings:
         df = postings['df']
         idf = np.log10(N_DOCS / df)
-        for doc_id, idx_term in postings['posting_list'].items():
+        for doc_id, idx_term in postings['postings'].items():
             tf = 1 + np.log10(len(idx_term))
             Scores[doc_id] = tf * idf
     return Scores
@@ -291,7 +287,7 @@ def perform_phrase_search(query):
         # Fetch the document for the current token from MongoDB
         document = collection.find_one({"_id": token})
         if document:
-            postings.append(document.get('posting_list', {}))
+            postings.append(document.get('postings', {}))
         else:
             # If the token is not found, append an empty postings list
             postings.append({})
@@ -317,7 +313,7 @@ def perform_proximity_search(tokens, PROX):
         # Fetch the document for the current token from MongoDB
         document = collection.find_one({"_id": token})
         if document:
-            postings.append(document.get('posting_list', {}))
+            postings.append(document.get('postings', {}))
         else:
             # If the token is not found, append an empty postings list
             postings.append({})
@@ -347,7 +343,9 @@ def desp_preprocessing_boolean(text):
     
     # Removing punctuation except for '#'
     text = non_alpha_pattern_boolean.sub(" ", text)
-
+    pattern = r'\b(?!AND\b|OR\b|NOT\b)\w+\b'
+        # Use a lambda function to lower the matched words
+    text = re.sub(pattern, lambda x: x.group().lower(), query)
     if language_full_form in stemmed_languages:
         stopwords_by_language = set(stopwords.words(language_full_form))
         # Preparing regex pattern without altering 'AND', 'NOT', 'OR'
@@ -416,9 +414,9 @@ def boolean_search(query):
                 hashtag=False
         else:
             dict_word= collection.find_one({"_id": token})
-            dict_word=positional_index.get(token) 
+            #dict_word=positional_index.get(token) 
             if dict_word is not None: #word exist in the postings
-                term_postings = set(dict_word['posting_list'].keys())
+                term_postings = set(dict_word['postings'].keys())
             else:
                 term_postings=set()
             if (len(operators)==0):
@@ -440,9 +438,10 @@ def boolean_search(query):
 async def route_query(query: str, N_PAGE: int = Query(30, alias="page")):
     pattern = r'\b(AND|OR|NOT)\b|["#]'
     if re.search(pattern, query):
+        global CURRENT_RESULT
         CURRENT_RESULT=boolean_search(query=query)
     else:
-        CURRENT_RESULT=optimized_tfidf(query, N_DOCS)
+        CURRENT_RESULT=optimized_tfidf(query, N)
     return await retrieve_jobs(1,N_PAGE)
 # Example usage
 # sorted_keys = tfidf("your query", positional_index, stopwords, N_DOCS)
@@ -484,8 +483,10 @@ async def retrieve_jobs(page: int, number_per_page: int):
     document_indexes_needed = CURRENT_RESULT[start_index:end_index]
     current_length=len(CURRENT_RESULT)
     documents_fetched = fetch_documents(document_indexes_needed)
-    additional_docs_needed = number_per_page - len(documents_fetched)
-    
+    if documents_fetched:
+        additional_docs_needed = number_per_page - len(documents_fetched)
+    else:
+        additional_docs_needed=number_per_page
     # If more documents are needed, fetch additional documents
     while additional_docs_needed > 0 and start_index<current_length:
         pagination_offset+=additional_docs_needed
@@ -501,7 +502,8 @@ async def retrieve_jobs(page: int, number_per_page: int):
         additional_docs_needed = number_per_page - len(documents_fetched)
         
         # Update buffer size or break condition to avoid infinite loops if needed
-        
+    if not documents_fetched:
+        documents_fetched={}
     return documents_fetched
 
 ##################################################
@@ -603,8 +605,7 @@ if __name__ == "__main__":
     #print(positional_index)
     
     uvicorn.run(app, host="0.0.0.0", port=8006, log_level="debug")
-    CURRENT_RESULT=DOC_IDS[:10000]
-    print(test_jobs(2, 20))
+    #CURRENT_RESULT=DOC_IDS[:10000]
         # SQL query to retrieve table schema information
     # SQL query to fetch IDs (assuming IDs are stored in a column named 'id' in the 'jobs' table)
 
