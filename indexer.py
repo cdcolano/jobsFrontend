@@ -24,8 +24,8 @@ REDIS_CONNECTION_CONFIG = {
     'decode_responses': True,
 }
 
-JOBS_POOL_CURSOR = 'JOBS_POOL'
-JOBS_POOL_CURSOR_SIZE = 2000
+JOBS_POOL_CURSOR_NAME = os.getenv('JOBS_POOL_CURSOR_NAME')
+JOBS_POOL_CURSOR_SIZE = os.getenv('JOBS_POOL_CURSOR_SIZE')
 
 
 def build_index(documents: list[list[str]]) -> dict:
