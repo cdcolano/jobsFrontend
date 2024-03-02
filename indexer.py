@@ -21,7 +21,7 @@ REDIS_CONNECTION_CONFIG = {
     'host': os.getenv('REDIS_HOST'),
     'port': os.getenv('REDIS_PORT'),
     'password': os.getenv('REDIS_PASSWORD'),
-    'decode_responses': True
+    'decode_responses': True,
 }
 
 JOBS_POOL_CURSOR = 'JOBS_POOL'
@@ -53,14 +53,6 @@ def build_index(documents: list[list[str]]) -> dict:
                 index[term][doc[0]] += f',{pos}'
     return index
 
-    # positions = {}
-    # for i, term in enumerate(preprocess(' '.join(document))):
-    #     if term not in positions.keys():  # Get all the appearances of a term in the document
-    #         positions[term] = str(i)
-    #     else:
-    #         positions[term] += f',{i}'
-    # return positions
-
 
 def update_remote_index(index: dict) -> bool:
     with redis.Redis(**REDIS_CONNECTION_CONFIG) as rd_connection:
@@ -77,14 +69,6 @@ if __name__ == '__main__':
             cursor.execute("SELECT Count(id) FROM jobs;")
             N = cursor.fetchone()[0]
             print(N)
-
-        # with pg_connection.cursor(name=JOBS_POOL_CURSOR) as jp_cursor:
-        #     jp_cursor.itersize = JOBS_POOL_CURSOR_SIZE
-        #     jp_cursor.execute("SELECT * FROM jobs;")
-        #     for job in jp_cursor:
-        #         update_remote_index(job[0], build_index([str(x) for x in job]))
-        #     # if i > JOBS_POOL_SIZE * 10:
-        #     #     exit()
 
         with pg_connection.cursor() as jp_cursor:
             jp_cursor.execute("DECLARE JOBS_POOL_CUR CURSOR FOR SELECT * FROM fetch_jobs_content;")
