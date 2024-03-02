@@ -1,5 +1,7 @@
 import re
 import nltk
+import os
+import dotenv
 
 from nltk.corpus import stopwords
 from nltk.stem.snowball import SnowballStemmer
@@ -7,11 +9,13 @@ from langdetect import detect, LangDetectException
 from langcodes import Language
 
 
+dotenv.load_dotenv()
+
 nltk.download('stopwords')
 nltk.download('wordnet')
 
-# TOKENIZATION_REGEX = r"(\s|(\'(?!\w)))+"
-TOKENIZATION_REGEX = r"(\s|(\W(?!\w))+)+"
+
+TOKENIZATION_REGEX = os.getenv('TOKENIZATION_REGEX')
 
 stemmed_languages = ["arabic", "danish", "dutch", "english", "finnish", "french", "german",
                      "hungarian", "italian", "norwegian", "portuguese", "romanian", "russian",

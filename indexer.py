@@ -25,7 +25,7 @@ REDIS_CONNECTION_CONFIG = {
 }
 
 JOBS_POOL_CURSOR_NAME = os.getenv('JOBS_POOL_CURSOR_NAME')
-JOBS_POOL_CURSOR_SIZE = os.getenv('JOBS_POOL_CURSOR_SIZE')
+JOBS_POOL_CURSOR_SIZE = int(os.getenv('JOBS_POOL_CURSOR_SIZE'))
 
 
 def build_index(documents: list[list[str]]) -> dict:
