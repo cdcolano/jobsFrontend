@@ -24,6 +24,8 @@ REDIS_CONNECTION_CONFIG = {
     'decode_responses': True,
 }
 
+FETCH_ALL_JOBS_VIEW=os.getenv('FETCH_ALL_JOBS_VIEW')
+
 JOBS_POOL_CURSOR_NAME = os.getenv('JOBS_POOL_CURSOR_NAME')
 JOBS_POOL_CURSOR_SIZE = int(os.getenv('JOBS_POOL_CURSOR_SIZE'))
 
@@ -51,32 +53,48 @@ def build_index(documents: list[list[str]]) -> dict:
                 index[term][doc[0]] = str(pos)
             else:
                 index[term][doc[0]] += f',{pos}'
+    del documents
     return index
 
 
 def update_remote_index(index: dict) -> bool:
     with redis.Redis(**REDIS_CONNECTION_CONFIG) as rd_connection:
-        for term, data in index.items():
-            rd_connection.hset(term, mapping=data)
+        pipe = rd_connection.pipeline()
+        [pipe.hset(term, mapping=data) for term, data in index.items()]
+        pipe.execute()
+    del index
+    return True
+
+
+def index_full_database(offset: int = 0) -> bool:
+    with psycopg2.connect(**PG_CONNECTION_CONFIG) as pg_connection:
+        with pg_connection.cursor() as jp_cursor:
+            jp_cursor.execute(f"""
+            SELECT * FROM {FETCH_ALL_JOBS_VIEW} 
+            WHERE id > {offset} AND id <= {offset + JOBS_POOL_CURSOR_SIZE}  
+            ORDER BY id;
+            """)
+            update_remote_index(build_index(jp_cursor.fetchall()))
     return True
 
 
 if __name__ == '__main__':
     start_time = time.time()
 
-    with psycopg2.connect(**PG_CONNECTION_CONFIG) as pg_connection:
-        with pg_connection.cursor() as cursor:
+    with psycopg2.connect(**PG_CONNECTION_CONFIG) as conn:
+        with conn.cursor() as cursor:
             cursor.execute("SELECT Count(id) FROM jobs;")
-            N = cursor.fetchone()[0]
+            N = int(cursor.fetchone()[0])
             print(N)
 
-        with pg_connection.cursor() as jp_cursor:
-            jp_cursor.execute("DECLARE JOBS_POOL_CUR CURSOR FOR SELECT * FROM fetch_jobs_content;")
-            n = 0
-            while n < N:
-                jp_cursor.execute(f"FETCH FORWARD {JOBS_POOL_CURSOR_SIZE} FROM JOBS_POOL_CUR;")
-                update_remote_index(build_index(jp_cursor.fetchall()))
-                n += JOBS_POOL_CURSOR_SIZE
-                print(f"{(n / N) * 100}%")
+    n_processed_docs = 0
+    while n_processed_docs < N:
+        try:
+            index_full_database(n_processed_docs)
+            n_processed_docs += JOBS_POOL_CURSOR_SIZE
+            print(f"{n_processed_docs:7}/{N:7} | {(n_processed_docs / N) * 100:3.2f} %")
+        except Exception as e:
+            print(e)
+            print("PG DB Connection lost, reconnecting ...")
 
     print("--- %s seconds ---" % (time.time() - start_time))
