@@ -345,7 +345,7 @@ def desp_preprocessing_boolean(text):
     text = non_alpha_pattern_boolean.sub(" ", text)
     pattern = r'\b(?!AND\b|OR\b|NOT\b)\w+\b'
         # Use a lambda function to lower the matched words
-    text = re.sub(pattern, lambda x: x.group().lower(), query)
+    text = re.sub(pattern, lambda x: x.group().lower(), text)
     if language_full_form in stemmed_languages:
         stopwords_by_language = set(stopwords.words(language_full_form))
         # Preparing regex pattern without altering 'AND', 'NOT', 'OR'
@@ -367,19 +367,19 @@ def desp_preprocessing_boolean(text):
     else:
         # For languages not supported for stemming, tokenize while preserving specific tokens
         words = re.findall(r'(\bAND\b|\bOR\b|\bNOT\b|\b\w+\b|[#"\(\)])', text)
-    
+    print(words)
     return words
 #boolean search function
-def boolean_search(query):
+def boolean_search(tokens):
     ######## IMPORTANT#####
     #NOT REMOVING #,(,),""
     #CHECKING IF #WORK
     #COMPROBAR QUE EL TDIDF SE ORDENA DESCENDENTEMENTE Y ELIMINAR OR AND Y ETC DE LA REGEX
     
-    tokens=desp_preprocessing_boolean(query)
-
+    tokens=desp_preprocessing_boolean(tokens)
+    print(tokens)
     #doc_ids=set(getAllDocs(positional_index)) #if query is empty all docs are retrived
-    current_result=DOC_IDS.copy()
+    current_result=set(DOC_IDS)
     operators=[]
     word_for_phrase = []
     phrase=False
@@ -430,16 +430,17 @@ def boolean_search(query):
                     current_result |= term_postings
                 elif operator == "NOT":
                     term_postings=DOC_IDS-term_postings
-    return current_result
+    return list(current_result)
 
 
 #CURRENT RESULT IS DESIGNED FOR PAGINATION, then establishing a page size is easey to keep track of the page and retrieve the actual docs
 @app.get("/search/")
 async def route_query(query: str, N_PAGE: int = Query(30, alias="page")):
     pattern = r'\b(AND|OR|NOT)\b|["#]'
+    print(query)
     if re.search(pattern, query):
         global CURRENT_RESULT
-        CURRENT_RESULT=boolean_search(query=query)
+        CURRENT_RESULT=boolean_search(query)
     else:
         CURRENT_RESULT=optimized_tfidf(query, N)
     return await retrieve_jobs(1,N_PAGE)
