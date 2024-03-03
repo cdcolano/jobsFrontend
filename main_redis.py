@@ -42,70 +42,82 @@ from langdetect import detect
 from langcodes import Language
 import gc
 import redis
+import uvicorn
+import threading
+from dotenv import load_dotenv
+load_dotenv()
 
 nltk.download('stopwords')
 
-hostname = 'clnode093.clemson.cloudlab.us'
-database = 'jobs_db'
-username = 'root'
-port = 5432
-password = '6WG,8q2fK@gmo0T+#`JH'   # It's not recommended to hardcode passwords in your scripts
+PG_CONNECTION_CONFIG = {
+    'host': os.getenv('PG_HOSTNAME'),
+    'dbname': os.getenv('PG_DB_NAME'),
+    'user': os.getenv('PG_USERNAME'),
+    'port': os.getenv('PG_POST'),
+    'password': os.getenv('PG_PASSWORD'),
+}
+REDIS_CONNECTION_CONFIG = {
+    'host': os.getenv('REDIS_HOST'),
+    'port': os.getenv('REDIS_PORT'),
+    'password': os.getenv('REDIS_PASSWORD'),
+    'decode_responses': True,
+}
+
+PG_CONNECTION_CONFIG={
+'host' :'clnode093.clemson.cloudlab.us',
+'dbname' : 'jobs_db',
+'user' : 'root',
+'port' : 5432,
+'password' : '6WG,8q2fK@gmo0T+#`JH'   # It's not recommended to hardcode passwords in your scripts
+}
+
+REDIS_CONNECTION_CONFIG={
+'host' : 'clnode030.clemson.cloudlab.us' , # Example, adjust to your Redis server
+'port' : 6379,  # Default Redis port
+'password' : 'd2axZEU0614lcQ9K1ssB',
+'decode_responses': True
+}
+
+r = redis.Redis(**REDIS_CONNECTION_CONFIG)
 
 
+connection = psycopg2.connect(**PG_CONNECTION_CONFIG)
+DOC_IDS=[]
+N=0
+ID2DATE={}
+def update_database_info():
+    global DOC_IDS, N,ID2DATE
+    query=f"""
+        SELECT Count(*) FROM jobs;
 
-#db_connection = pymongo.MongoClient("mongodb+srv://deusto:deusto@cluster0.knpxqxl.mongodb.net/prendas?retryWrites=true&w=majority")
- 
-# Select your database
-#db = db_connection["your_database"]
+        """
 
-# Select your collection
-#collection = db["your_collection"]
+    cursor = connection.cursor()
+    cursor.execute(query)
+    N = cursor.fetchone()[0]  # Fetch the JSON result
 
-# Load all documents from the collection into memory
-#positional_index = collection.find({})
+    query=f"""
+        SELECT json_agg(ID::INTEGER) FROM jobs;
 
-N_DOCS=0
+        """
 
-connection = psycopg2.connect(
-        host=hostname,
-        dbname=database,
-        user=username,
-        password=password,
-        port=port
-    )
+    cursor.execute(query)
+    DOC_IDS= cursor.fetchone()[0] #DOC_IDS could be replace to ID2DATE.keys() if memory ussage is bad
 
-query=f"""
-       SELECT Count(*) FROM jobs;
 
+    query = """
+    SELECT json_object_agg(ID, date_posted) FROM jobs;
     """
-
-# Execute the query
-cursor = connection.cursor()
-cursor.execute(query)
-N = cursor.fetchone()[0]  # Fetch the JSON result
-print(N)
-
-query=f"""
-       SELECT json_agg(ID::INTEGER) FROM jobs;
-
-    """
-
-cursor.execute(query)
-DOC_IDS= cursor.fetchone()[0] #DOC_IDS could be replace to ID2DATE.keys() if memory ussage is bad
+    cursor = connection.cursor()
+    cursor.execute(query)
+    current_time=datetime.now()
+    ID2DATE = cursor.fetchone()[0] #store the ID to Date to consider dates in the retrieval
+    for key, value in tqdm(ID2DATE.items(), desc="Parsing dates"):
+        ID2DATE[key] = parse_date(value,current_time)
+    cursor.close()
 
 
-query = """
-SELECT json_object_agg(ID, date_posted) FROM jobs;
-"""
-cursor = connection.cursor()
-cursor.execute(query)
-ID2DATE = cursor.fetchone()[0] #store the ID to Date to consider dates in the retrieval
-cursor.close()
 
-origins = [
-    "http://localhost:3000",
-    "localhost:3000"
-]
 
 app = FastAPI(title="Gateway", openapi_url="/openapi.json")
 
@@ -113,7 +125,6 @@ app = FastAPI(title="Gateway", openapi_url="/openapi.json")
 
 api_router = APIRouter()
 origins=["*"]
-#def getPrenda():
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -122,15 +133,6 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-
-
-#uri = 'mongodb+srv://' + USERNAME + ':' + PASSWORD + "@ttds-cluster.vubotvd.mongodb.net/?retryWrites=true&w=majority"
-# Create a new client and connect to the server
-#client = MongoClient(uri)
-redis_host = 'clnode030.clemson.cloudlab.us'  # Example, adjust to your Redis server
-redis_port = 6379  # Default Redis port
-redis_password = 'd2axZEU0614lcQ9K1ssB'
-r = redis.Redis(host=redis_host, port=redis_port, password=redis_password, decode_responses=True)
 
 
 def getAllDocs(positional_index):
@@ -184,26 +186,29 @@ def add_dates_to_score(Scores, connection):
     cursor = connection.cursor()
     cursor.execute(query, (id_array,))
     results = cursor.fetchall()
-    print(results)
 
-parsed_cache = {'': datetime(year=1900, month=1, day=1)} #Cache for quixcker parsing critical for timesaving in queries
+parsed_cache={}
 
-def parse_date(date_str, dayfirst=True):
+def parse_date(date_str,current_time, dayfirst=True):
     if date_str in parsed_cache:  # Return cached result if available
         return parsed_cache[date_str]
     try:
         # Parse the date with dayfirst option
         parsed_date = parser.parse(date_str, dayfirst=dayfirst)
-        parsed_cache[date_str] = parsed_date  # Cache the result
-        return parsed_date
+        date_factor=current_time - parsed_date
+        days_diff = abs(date_factor.days)
+        date_factor = 1 / (1 + days_diff / 30)  # Adding 1 to avoid division by zero and ensure recent docs have higher factor
+        parsed_cache[date_str] = date_factor  # Cache the result
+        return date_factor
     except ValueError:
         print(f"Could not parse date: {date_str}")
         return None
+min_date_value=parse_date("0001-01-01", datetime.now())
+parsed_cache={"":min_date_value}
 
 def optimized_tfidf(query, N_DOCS):
     tokens=desp_preprocessing(query)
     Scores = {}
-    current_time=datetime.now()
     for token in tokens:
         postings= r.hgetall(token)
         #postings = positional_index.get(token)
@@ -213,35 +218,20 @@ def optimized_tfidf(query, N_DOCS):
             idf = np.log10(N_DOCS / df)
             for doc_id, idx_term in postings.items():
                 idx_term=idx_term.split(",")
-                date=ID2DATE[doc_id]
-                parsed_date = parse_date(date, dayfirst=True) #This would work but extremelly inefficient
-                date_factor=current_time - parsed_date
-                days_diff = abs(date_factor.days)
-                date_factor = 1 / (1 + days_diff / 30)  # Adding 1 to avoid division by zero and ensure recent docs have higher factor
+                if doc_id in ID2DATE:
+                    date_factor=ID2DATE[doc_id]
+                else:
+                    date_factor=ID2DATE['']
+                #parsed_date = parse_date(date, dayfirst=True) #Already parsed in the ID2DATE
                 tf = 1 + np.log10(len(idx_term))
                 doc_id=int(doc_id)
                 Scores[doc_id] = Scores.get(doc_id, 0) + tf * idf* date_factor
     #sorted_docs = sorted(Scores.items(), key=lambda x: x[1], reverse=True)
     
     sorted_docs= sorted(Scores, key=Scores.get, reverse=True)
-    print(type(sorted_docs[0]))
     return  sorted_docs
 
     #return [(doc_id, round(score, 4)) for doc_id, score in sorted_docs]
-
-
-def process_token(args):
-    token, positional_index, N_DOCS = args
-    Scores = {}
-    postings = positional_index.get(token)
-    if postings:
-        df = postings['df']
-        idf = np.log10(N_DOCS / df)
-        for doc_id, idx_term in postings['postings'].items():
-            tf = 1 + np.log10(len(idx_term))
-            Scores[doc_id] = tf * idf
-    return Scores
-
 
 def perform_phrase_search(query):
    # tokens=pre_process(query)
@@ -325,7 +315,6 @@ def desp_preprocessing_boolean(text):
     else:
         # For languages not supported for stemming, tokenize while preserving specific tokens
         words = re.findall(r'(\bAND\b|\bOR\b|\bNOT\b|\b\w+\b|[#"\(\)])', text)
-    print(words)
     return words
 #boolean search function
 def boolean_search(tokens):
@@ -335,7 +324,6 @@ def boolean_search(tokens):
     #COMPROBAR QUE EL TDIDF SE ORDENA DESCENDENTEMENTE Y ELIMINAR OR AND Y ETC DE LA REGEX
     
     tokens=desp_preprocessing_boolean(tokens)
-    print(tokens)
     #doc_ids=set(getAllDocs(positional_index)) #if query is empty all docs are retrived
     current_result=set(DOC_IDS)
     operators=[]
@@ -356,7 +344,6 @@ def boolean_search(tokens):
                 proximity=True #next tokens should be added to a list and perform proximity search over that list
         elif token ==")":#proximity search should be performed
                 current_result&=perform_proximity_search(word_for_phrase, distance)
-                print(current_result)
                 word_for_phrase.clear()
                 proximity=False
         elif token == '"':
@@ -364,7 +351,6 @@ def boolean_search(tokens):
                 phrase=True
             else: #end of the phrase is detected search is performed
                 partial_result=perform_phrase_search(word_for_phrase)
-                print(partial_result)
                 current_result&=perform_phrase_search(word_for_phrase)
                 word_for_phrase.clear()
                 phrase=False
@@ -392,7 +378,6 @@ def boolean_search(tokens):
                     current_result |= term_postings
                 elif operator == "NOT":
                     term_postings=DOC_IDS-term_postings
-    print(current_result)
     return list(current_result)
 
 
@@ -400,19 +385,13 @@ def boolean_search(tokens):
 @app.get("/search/")
 async def route_query(query: str, N_PAGE: int = Query(30, alias="page")):
     pattern = r'\b(AND|OR|NOT)\b|["#]'
-    print(query)
     if re.search(pattern, query):
         global CURRENT_RESULT
         CURRENT_RESULT=boolean_search(query)
     else:
         CURRENT_RESULT=optimized_tfidf(query, N)
     return await retrieve_jobs(1,N_PAGE)
-# Example usage
-# sorted_keys = tfidf("your query", positional_index, stopwords, N_DOCS)
 
-
-#for i, b in tfidf("wink drink ink", positional_index, stopwords):
-#    print(i,b)
 
 
 def fetch_documents(indexes):
@@ -471,7 +450,12 @@ async def retrieve_jobs(page: int, number_per_page: int):
         documents_fetched={}
     return documents_fetched
 
-
+def run_periodically():
+    while True:
+        time.sleep(86400)
+        update_database_info()
+        # Wait for 24 hours (86400 seconds)
+        
     
 
 
@@ -479,13 +463,12 @@ app.include_router(api_router)
 
 
 if __name__ == "__main__":
-    # Use this for debugging purposes only
-    import uvicorn
-    #print(positional_index)
-    
+    update_database_info()
+    thread = threading.Thread(target=run_periodically)
+    # Daemon threads are killed when the main program exits
+    thread.daemon = True
+    thread.start()
     uvicorn.run(app, host="0.0.0.0", port=8006, log_level="debug")
-    #CURRENT_RESULT=DOC_IDS[:10000]
-        # SQL query to retrieve table schema information
-    # SQL query to fetch IDs (assuming IDs are stored in a column named 'id' in the 'jobs' table)
+    
 
    
