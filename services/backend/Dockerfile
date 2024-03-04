@@ -19,4 +19,4 @@ RUN pip3 install --upgrade pip
 RUN pip3 install -r ./requirements.txt
 
 COPY services/backend/src/ .
-COPY services/indexer/preprocessing.py ./utils/
+COPY services/utils/ utils/

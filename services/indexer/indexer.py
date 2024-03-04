@@ -5,7 +5,7 @@ import psycopg2
 import redis
 import tqdm
 
-from preprocessing import preprocess
+from services.utils.preprocessing import preprocess
 from dotenv import load_dotenv
 from multiprocessing import Pool
 
