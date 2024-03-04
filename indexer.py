@@ -1,5 +1,6 @@
 import os
 import time
+
 import psycopg2
 import redis
 import tqdm
@@ -32,6 +33,8 @@ JOBS_POOL_CURSOR_SIZE = int(os.getenv('JOBS_POOL_CURSOR_SIZE', default=2000))
 
 JOB_INDEX_START_POSITION = int(os.getenv('JOBS_INDEX_START_POSITION', default=0))
 JOBS_INDEX_END_POSITION = os.getenv('JOBS_INDEX_END_POSITION', default=None)
+
+NUMBER_OF_THREADS = int(os.getenv('NUMBER_OF_THREADS', default=5))
 
 
 def build_index(documents: list[list[str]]) -> dict:
@@ -70,7 +73,7 @@ def update_remote_index(index: dict) -> bool:
     return True
 
 
-def index_database_segment(offset: int = 0) -> float:
+def index_database_segment(offset: int = 0) -> tuple[int, float]:
     t = time.perf_counter()
     while True:
         try:
@@ -84,9 +87,7 @@ def index_database_segment(offset: int = 0) -> float:
                     data = cursor.fetchall()
             update_remote_index(build_index(data))
             del data
-            # print(f"Excecueted batch {offset}-{offset + JOBS_POOL_CURSOR_SIZE} "
-            #       f"Batch execution time:{time.perf_counter() - t:.2f} seconds")
-            return time.perf_counter() - t
+            return offset, time.perf_counter() - t
         except Exception as e:
             print(e)
             print("PG DB Connection lost, reconnecting ...")
@@ -103,9 +104,9 @@ if __name__ == '__main__':
                 N = int(cursor.fetchone()[0])
                 print(N)
 
-    with Pool() as pool:
+    with Pool(processes=NUMBER_OF_THREADS) as pool:
         inputs = range(0, N + JOBS_POOL_CURSOR_SIZE, JOBS_POOL_CURSOR_SIZE)
         execution_times = [x for x in tqdm.tqdm(pool.imap_unordered(index_database_segment, inputs), total=len(inputs))]
 
-    [print(x) for x in execution_times]
+    [print(f"{x[0]:9} | {x[1]}") for x in execution_times]
     print("--- %s seconds ---" % (time.perf_counter() - start_time))
