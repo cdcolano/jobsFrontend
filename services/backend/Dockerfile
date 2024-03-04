@@ -1,4 +1,6 @@
-FROM python:3.8-slim-buster
+FROM python:3.9-slim-buster
+
+LABEL version=0.1
 
 RUN apt-get update && \
     apt-get -y install g++ && \
@@ -12,8 +14,9 @@ WORKDIR /app
 ENV PATH="${PATH}:/root/.local/bin"
 ENV PYTHONPATH=.
 
-COPY requirements.txt .
+COPY services/backend/requirements.txt .
 RUN pip3 install --upgrade pip
 RUN pip3 install -r ./requirements.txt
 
-COPY src/ .
+COPY services/backend/src/ .
+COPY services/indexer/preprocessing.py ./utils/

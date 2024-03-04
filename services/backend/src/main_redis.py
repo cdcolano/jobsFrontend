@@ -1,34 +1,10 @@
-from fastapi import FastAPI, APIRouter
+from fastapi import APIRouter
 import time
 import os
-from fastapi import FastAPI, Body, HTTPException, status
-from fastapi.responses import Response, JSONResponse
-from fastapi.encoders import jsonable_encoder
-from pydantic import BaseModel, Field, EmailStr
-from fastapi import FastAPI, File, UploadFile
-from typing import List
-#from schemas import Prenda, User, ComprasCreate, Compra
-from fastapi.responses import RedirectResponse, HTMLResponse
-import os
-import fastapi
-from fastapi.templating import Jinja2Templates
-from fastapi import FastAPI, Request,Depends, Query
-#from jose import jwt,JWTError
-from fastapi.responses import HTMLResponse
-import shutil
-import requests
-#from databases import Database
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-import pymongo
-from pymongo import MongoClient
-from fastapi.security import OAuth2PasswordRequestForm
-from fastapi.security import OAuth2PasswordBearer
-import re
 import itertools
-from nltk.stem import PorterStemmer
 import numpy as np
-from urllib.parse import quote_plus
 import psycopg2
 from tqdm import tqdm
 from dateutil import parser
@@ -40,12 +16,12 @@ import re
 import nltk
 from langdetect import detect
 from langcodes import Language
-import gc
 import redis
 import uvicorn
 import threading
 from dotenv import load_dotenv
-from utils.preprocessing import preprocess,preprocess_boolean
+from src.utils.preprocessing import preprocess,preprocess_boolean
+
 
 load_dotenv()
 
