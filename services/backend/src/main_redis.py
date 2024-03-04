@@ -82,6 +82,26 @@ REDIS_CONNECTION_CONFIG={
 
 r = redis.Redis(**REDIS_CONNECTION_CONFIG)
 
+job_posting_thesaurus = {
+    "developer": ["programmer", "coder", "software engineer"],
+    "data": ["information", "intelligence"],
+    "manager": ["supervisor", "team leader", "head", "director"],
+    "remote": ["home", "virtual", "offsite", "telecommute", "distributed"],
+    "full-time": ["permanent"],
+    "part-time": ["temporary", "contract", "freelance", "hourly", "casual"],
+    "marketing": ["SEO", "branding"],
+    "writer": ["copywriter", "author", "editor"],
+    "consultant": ["advisor", "consulting", "strategy", "management"],
+    "service": ["support", "", "help"],
+    "HR": ["human resources", "HR manager", "recruitment", "talent"],
+    "finance": ["accountant", "auditor", "controller", "consultant"],
+    "education": ["teacher", "educator", "instructor", "professor", "tutor"],
+    "healthcare": ["nurse", "doctor", "medical", "pharmacist"],
+    "intern": ["internship", "trainee", "apprentice"],
+    "entry level": ["junior", "associate", "beginner", "trainee", "starter"],
+    "senior": ["lead","principal", "chief"],
+    "executive": ["CEO", "CFO", "CTO"]
+}
 
 connection = psycopg2.connect(**PG_CONNECTION_CONFIG)
 DOC_IDS=[]
@@ -211,27 +231,25 @@ parsed_cache={"":min_date_value}
 def optimized_tfidf(query, N_DOCS):
     tokens=preprocess(query)
     Scores = {}
+    # Use pipeline to reduce the number of calls to Redis
+    pipe = r.pipeline()
     for token in tokens:
-        postings= r.hgetall(token)
-        #postings = positional_index.get(token)
+        pipe.hgetall(token)
+    postings_list = pipe.execute()
+    for postings in postings_list:
         if postings:
-            df=len(postings)
-            #df = postings['df']
+            df = len(postings)
             idf = np.log10(N_DOCS / df)
             for doc_id, idx_term in postings.items():
-                idx_term=idx_term.split(",")
-                if doc_id in ID2DATE:
-                    date_factor=ID2DATE[doc_id]
-                else:
-                    date_factor=ID2DATE['']
-                #parsed_date = parse_date(date, dayfirst=True) #Already parsed in the ID2DATE
-                tf = 1 + np.log10(len(idx_term))
-                doc_id=int(doc_id)
-                Scores[doc_id] = Scores.get(doc_id, 0) + tf * idf* date_factor
-    #sorted_docs = sorted(Scores.items(), key=lambda x: x[1], reverse=True)
-    
+                idx_term_count = len(idx_term.split(","))
+                date_factor = ID2DATE.get(doc_id, ID2DATE[''])
+                tf = 1 + np.log10(idx_term_count)
+                doc_id = int(doc_id)
+                Scores[doc_id] = Scores.get(doc_id, 0) + tf * idf * date_factor
     sorted_docs= sorted(Scores, key=Scores.get, reverse=True)
-    return  sorted_docs
+    return sorted_docs
+
+
 
     #return [(doc_id, round(score, 4)) for doc_id, score in sorted_docs]
 
@@ -384,6 +402,13 @@ def boolean_search(tokens):
                     term_postings=DOC_IDS-term_postings
     return list(current_result)
 
+def expand_query(query):
+    new_query=query
+    for word in query.split():
+        if word in job_posting_thesaurus:
+            for synonym in job_posting_thesaurus[word]:
+               new_query=new_query+ " " + synonym
+    return new_query
 
 #CURRENT RESULT IS DESIGNED FOR PAGINATION, then establishing a page size is easey to keep track of the page and retrieve the actual docs
 @app.get("/search/")
@@ -393,6 +418,7 @@ async def route_query(query: str, N_PAGE: int = Query(30, alias="page")):
         global CURRENT_RESULT
         CURRENT_RESULT=boolean_search(query)
     else:
+        query=expand_query(query)
         CURRENT_RESULT=optimized_tfidf(query, N)
     return await retrieve_jobs(1,N_PAGE)
 
@@ -460,18 +486,17 @@ def run_periodically():
         update_database_info()
         # Wait for 24 hours (86400 seconds)
         
-    
+update_database_info()
+thread = threading.Thread(target=run_periodically)
+# Daemon threads are killed when the main program exits
+thread.daemon = True
+thread.start()  
 
 
 app.include_router(api_router)
 
 
 if __name__ == "__main__":
-    update_database_info()
-    thread = threading.Thread(target=run_periodically)
-    # Daemon threads are killed when the main program exits
-    thread.daemon = True
-    thread.start()
     uvicorn.run(app, host="0.0.0.0", port=8006, log_level="debug")
     
 
