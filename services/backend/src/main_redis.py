@@ -20,7 +20,7 @@ import redis
 import uvicorn
 import threading
 from dotenv import load_dotenv
-from src.utils.preprocessing import preprocess,preprocess_boolean
+from utils.preprocessing import preprocess
 
 
 load_dotenv()
@@ -321,7 +321,7 @@ def boolean_search(tokens):
     #CHECKING IF #WORK
     #COMPROBAR QUE EL TDIDF SE ORDENA DESCENDENTEMENTE Y ELIMINAR OR AND Y ETC DE LA REGEX
     
-    tokens=preprocess_boolean(tokens, tokenization_regex=tokenization_regex_boolean)
+    tokens=preprocess(tokens, tokenization_regex=tokenization_regex_boolean, boolean=True)
     #doc_ids=set(getAllDocs(positional_index)) #if query is empty all docs are retrived
     current_result=set(DOC_IDS)
     operators=[]

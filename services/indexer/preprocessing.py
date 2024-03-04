@@ -8,7 +8,6 @@ from nltk.stem.snowball import SnowballStemmer
 from langdetect import detect, LangDetectException
 from langcodes import Language
 
-
 dotenv.load_dotenv()
 
 nltk.download('stopwords')
@@ -20,6 +19,8 @@ TOKENIZATION_REGEX = os.getenv('TOKENIZATION_REGEX')
 stemmed_languages = ["arabic", "danish", "dutch", "english", "finnish", "french", "german",
                      "hungarian", "italian", "norwegian", "portuguese", "romanian", "russian",
                      "spanish", "swedish"]
+
+BOOLEAN_OPERATORS = ["AND", "OR", "NOT"]
 
 
 def detect_language(text: str) -> str:
@@ -35,7 +36,8 @@ def preprocess(
         text: str,
         stop: bool = True,
         stem: bool = True,
-        tokenization_regex: str = TOKENIZATION_REGEX
+        tokenization_regex: str = TOKENIZATION_REGEX,
+        boolean: bool = False
 ) -> list[str]:
     """
     Preprocesses text applying tokenization, case folding, stoping and stemming.
@@ -50,6 +52,8 @@ def preprocess(
         triggers stemming (defaults to `True`)
     tokenization_regex : str, optional
         regular expression used for tokenization.
+    boolean : bool, optional
+        triggers boolean search behaviour (defaults to `False`)
 
     Returns
     -------
@@ -64,16 +68,22 @@ def preprocess(
 
     def case_fold(strings_to_fold: list[str]) -> list[str]:
         """Apply case folding to list of strings"""
-        return [x.lower() for x in strings_to_fold]
+        if not boolean:
+            return [x.lower() for x in strings_to_fold]
+        return [x.lower() for x in strings_to_fold if x not in BOOLEAN_OPERATORS]
 
     def filter_stop_words(term_list: list[str], language: str) -> list[str]:
         """Filter stop words in list of strings"""
-        return [t for t in term_list if t not in stopwords.words(language)]
+        if not boolean:
+            return [t for t in term_list if t not in stopwords.words(language)]
+        return [t for t in term_list if t not in stopwords.words(language).update(BOOLEAN_OPERATORS)]
 
     def stem_words(term_list: list[str], language: str) -> list[str]:
         """Apply stemming to list of strings"""
         stemmer = SnowballStemmer(language)
-        return [stemmer.stem(t) for t in term_list]
+        if not boolean:
+            return [stemmer.stem(t) for t in term_list]
+        return [token if token in BOOLEAN_OPERATORS else stemmer.stem(token) for token in term_list]
 
     lang = detect_language(text)
     terms = case_fold(tokenize(text, tokenization_regex))
