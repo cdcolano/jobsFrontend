@@ -25,20 +25,20 @@ from utils.preprocessing import preprocess
 
 load_dotenv()
 
-nltk.download('stopwords')
+nltk.download("stopwords")
 
 PG_CONNECTION_CONFIG = {
-    'host': os.getenv('PG_HOSTNAME'),
-    'dbname': os.getenv('PG_DB_NAME'),
-    'user': os.getenv('PG_USERNAME'),
-    'port': os.getenv('PG_POST'),
-    'password': os.getenv('PG_PASSWORD'),
+    "host": os.getenv("PG_HOSTNAME"),
+    "dbname": os.getenv("PG_DB_NAME"),
+    "user": os.getenv("PG_USERNAME"),
+    "port": os.getenv("PG_PORT"),
+    "password": os.getenv("PG_PASSWORD"),
 }
 REDIS_CONNECTION_CONFIG = {
-    'host': os.getenv('REDIS_HOST'),
-    'port': os.getenv('REDIS_PORT'),
-    'password': os.getenv('REDIS_PASSWORD'),
-    'decode_responses': True,
+    "host": os.getenv("REDIS_HOST"),
+    "port": os.getenv("REDIS_PORT"),
+    "password": os.getenv("REDIS_PASSWORD"),
+    "decode_responses": True,
 }
 
 
@@ -50,17 +50,38 @@ job_posting_thesaurus = {
     "manager": ["manager", "supervisor", "team leader", "head", "director"],
     "remote": ["remote", "home", "virtual", "offsite", "telecommute", "distributed"],
     "full-time": ["full-time", "permanent"],
-    "part-time": ["part-time", "temporary", "contract", "freelance", "hourly", "casual"],
+    "part-time": [
+        "part-time",
+        "temporary",
+        "contract",
+        "freelance",
+        "hourly",
+        "casual",
+    ],
     "marketing": ["marketing", "SEO", "branding"],
     "writer": ["writer", "copywriter", "author", "editor"],
     "consultant": ["consultant", "advisor", "consulting", "strategy", "management"],
     "service": ["service", "support", "client service", "help"],
     "HR": ["HR", "human resources", "HR manager", "recruitment", "talent"],
     "finance": ["finance", "accountant", "auditor", "controller", "finance consultant"],
-    "education": ["education", "teacher", "educator", "instructor", "professor", "tutor"],
+    "education": [
+        "education",
+        "teacher",
+        "educator",
+        "instructor",
+        "professor",
+        "tutor",
+    ],
     "healthcare": ["healthcare", "nurse", "doctor", "medical", "pharmacist"],
     "intern": ["intern", "internship", "trainee", "apprentice"],
-    "entry level": ["entry level", "junior", "associate", "beginner", "trainee", "starter"],
+    "entry level": [
+        "entry level",
+        "junior",
+        "associate",
+        "beginner",
+        "trainee",
+        "starter",
+    ],
     "senior": ["senior", "lead", "principal", "chief"],
     "executive": ["executive", "CEO", "CFO", "CTO"],
     "programmer": ["developer", "programmer", "coder", "software"],
@@ -75,12 +96,40 @@ job_posting_thesaurus = {
     "home": ["remote", "home", "virtual", "offsite", "telecommute", "distributed"],
     "virtual": ["remote", "home", "virtual", "offsite", "telecommute", "distributed"],
     "offsite": ["remote", "home", "virtual", "offsite", "telecommute", "distributed"],
-    "telecommute": ["remote", "home", "virtual", "offsite", "telecommute", "distributed"],
-    "distributed": ["remote", "home", "virtual", "offsite", "telecommute", "distributed"],
+    "telecommute": [
+        "remote",
+        "home",
+        "virtual",
+        "offsite",
+        "telecommute",
+        "distributed",
+    ],
+    "distributed": [
+        "remote",
+        "home",
+        "virtual",
+        "offsite",
+        "telecommute",
+        "distributed",
+    ],
     "permanent": ["full-time", "permanent"],
-    "temporary": ["part-time", "temporary", "contract", "freelance", "hourly", "casual"],
+    "temporary": [
+        "part-time",
+        "temporary",
+        "contract",
+        "freelance",
+        "hourly",
+        "casual",
+    ],
     "contract": ["part-time", "temporary", "contract", "freelance", "hourly", "casual"],
-    "freelance": ["part-time", "temporary", "contract", "freelance", "hourly", "casual"],
+    "freelance": [
+        "part-time",
+        "temporary",
+        "contract",
+        "freelance",
+        "hourly",
+        "casual",
+    ],
     "hourly": ["part-time", "temporary", "contract", "freelance", "hourly", "casual"],
     "casual": ["part-time", "temporary", "contract", "freelance", "hourly", "casual"],
     "SEO": ["marketing", "SEO", "branding"],
@@ -99,14 +148,53 @@ job_posting_thesaurus = {
     "HR manager": ["HR", "human resources", "HR manager", "recruitment", "talent"],
     "recruitment": ["HR", "human resources", "HR manager", "recruitment", "talent"],
     "talent": ["HR", "human resources", "HR manager", "recruitment", "talent"],
-    "accountant": ["finance", "accountant", "auditor", "controller", "finance consultant"],
+    "accountant": [
+        "finance",
+        "accountant",
+        "auditor",
+        "controller",
+        "finance consultant",
+    ],
     "auditor": ["finance", "accountant", "auditor", "controller", "finance consultant"],
-    "controller": ["finance", "accountant", "auditor", "controller", "finance consultant"],
-    "finance consultant": ["finance", "accountant", "auditor", "controller", "finance consultant"],
+    "controller": [
+        "finance",
+        "accountant",
+        "auditor",
+        "controller",
+        "finance consultant",
+    ],
+    "finance consultant": [
+        "finance",
+        "accountant",
+        "auditor",
+        "controller",
+        "finance consultant",
+    ],
     "teacher": ["education", "teacher", "educator", "instructor", "professor", "tutor"],
-    "educator": ["education", "teacher", "educator", "instructor", "professor", "tutor"],
-    "instructor": ["education", "teacher", "educator", "instructor", "professor", "tutor"],
-    "professor": ["education", "teacher", "educator", "instructor", "professor", "tutor"],
+    "educator": [
+        "education",
+        "teacher",
+        "educator",
+        "instructor",
+        "professor",
+        "tutor",
+    ],
+    "instructor": [
+        "education",
+        "teacher",
+        "educator",
+        "instructor",
+        "professor",
+        "tutor",
+    ],
+    "professor": [
+        "education",
+        "teacher",
+        "educator",
+        "instructor",
+        "professor",
+        "tutor",
+    ],
     "tutor": ["education", "teacher", "educator", "instructor", "professor", "tutor"],
     "nurse": ["healthcare", "nurse", "doctor", "medical", "pharmacist"],
     "doctor": ["healthcare", "nurse", "doctor", "medical", "pharmacist"],
@@ -116,15 +204,29 @@ job_posting_thesaurus = {
     "trainee": ["entry level", "junior", "associate", "beginner", "trainee", "starter"],
     "apprentice": ["intern", "internship", "trainee", "apprentice"],
     "junior": ["entry level", "junior", "associate", "beginner", "trainee", "starter"],
-    "associate": ["entry level", "junior", "associate", "beginner", "trainee", "starter"],
-    "beginner": ["entry level", "junior", "associate", "beginner", "trainee", "starter"],
+    "associate": [
+        "entry level",
+        "junior",
+        "associate",
+        "beginner",
+        "trainee",
+        "starter",
+    ],
+    "beginner": [
+        "entry level",
+        "junior",
+        "associate",
+        "beginner",
+        "trainee",
+        "starter",
+    ],
     "starter": ["entry level", "junior", "associate", "beginner", "trainee", "starter"],
     "lead": ["senior", "lead", "principal", "chief"],
     "principal": ["senior", "lead", "principal", "chief"],
     "chief": ["senior", "lead", "principal", "chief"],
     "CEO": ["executive", "CEO", "CFO", "CTO"],
     "CFO": ["executive", "CEO", "CFO", "CTO"],
-    "CTO": ["executive", "CEO", "CFO", "CTO"]
+    "CTO": ["executive", "CEO", "CFO", "CTO"],
 }
 
 connection = psycopg2.connect(**PG_CONNECTION_CONFIG)
@@ -144,7 +246,8 @@ def parse_date(date_str, current_time, dayfirst=True):
         date_factor = current_time - parsed_date
         days_diff = abs(date_factor.days)
         date_factor = 1 / (
-                    1 + days_diff / 30)  # Adding 1 to avoid division by zero and ensure recent docs have higher factor
+            1 + days_diff / 30
+        )  # Adding 1 to avoid division by zero and ensure recent docs have higher factor
         parsed_cache[date_str] = date_factor  # Cache the result
         return date_factor
     except ValueError:
@@ -173,7 +276,9 @@ def update_database_info():
         """
 
     cursor.execute(query)
-    DOC_IDS = cursor.fetchone()[0]  # DOC_IDS could be replace to ID2DATE.keys() if memory ussage is bad
+    DOC_IDS = cursor.fetchone()[
+        0
+    ]  # DOC_IDS could be replace to ID2DATE.keys() if memory ussage is bad
 
     query = """
     SELECT json_object_agg(ID, date_posted) FROM jobs;
@@ -181,11 +286,13 @@ def update_database_info():
     cursor = connection.cursor()
     cursor.execute(query)
     current_time = datetime.now()
-    ID2DATE = cursor.fetchone()[0]  # store the ID to Date to consider dates in the retrieval
+    ID2DATE = cursor.fetchone()[
+        0
+    ]  # store the ID to Date to consider dates in the retrieval
     for key, value in tqdm(ID2DATE.items(), desc="Parsing dates"):
         ID2DATE[key] = parse_date(value, current_time)
     cursor.close()
-    ID2DATE[''] = parse_date("", current_time)
+    ID2DATE[""] = parse_date("", current_time)
 
 
 app = FastAPI(title="Gateway", openapi_url="/openapi.json")
@@ -197,23 +304,38 @@ app.add_middleware(
     allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"]
+    allow_headers=["*"],
 )
 
 
 def getAllDocs(positional_index):
     all_doc_ids = set()
     for term_data in positional_index.values():
-        all_doc_ids.update(term_data['posting_list'].keys())
+        all_doc_ids.update(term_data["posting_list"].keys())
     return all_doc_ids
 
 
 CURRENT_RESULT = []
 compiled_patterns = {}
 stemmers = {}
-stemmed_languages = ["arabic", "danish", "dutch", "english", "finnish", "french", "german", "hungarian", "italian",
-                     "norwegian", "portuguese", "romanian", "russian", "spanish", "swedish"]
-non_alpha_pattern = regex.compile(r'\p{P}')
+stemmed_languages = [
+    "arabic",
+    "danish",
+    "dutch",
+    "english",
+    "finnish",
+    "french",
+    "german",
+    "hungarian",
+    "italian",
+    "norwegian",
+    "portuguese",
+    "romanian",
+    "russian",
+    "spanish",
+    "swedish",
+]
+non_alpha_pattern = regex.compile(r"\p{P}")
 
 
 def desp_preprocessing(text):
@@ -221,7 +343,7 @@ def desp_preprocessing(text):
         language_code = detect(text)
         language_full_form = Language.get(language_code).language_name().lower()
     except:
-        language_full_form = 'unknown'
+        language_full_form = "unknown"
 
     text = non_alpha_pattern.sub(" ", text)
     text = text.lower()
@@ -229,10 +351,12 @@ def desp_preprocessing(text):
         stopwords_by_language = set(stopwords.words(language_full_form))
 
         if language_full_form not in compiled_patterns:
-            pattern = r'\b(?:' + '|'.join(map(re.escape, stopwords_by_language)) + r')\b'
+            pattern = (
+                r"\b(?:" + "|".join(map(re.escape, stopwords_by_language)) + r")\b"
+            )
             compiled_patterns[language_full_form] = re.compile(pattern)
 
-        text = compiled_patterns[language_full_form].sub(' ', text)
+        text = compiled_patterns[language_full_form].sub(" ", text)
 
         if language_full_form not in stemmers:
             stemmers[language_full_form] = SnowballStemmer(language_full_form)
@@ -272,7 +396,7 @@ def optimized_tfidf(query, N_DOCS):
             idf = np.log10(N_DOCS / df)
             for doc_id, idx_term in postings.items():
                 idx_term_count = len(idx_term.split(","))
-                date_factor = ID2DATE.get(doc_id, ID2DATE[''])
+                date_factor = ID2DATE.get(doc_id, ID2DATE[""])
                 tf = 1 + np.log10(idx_term_count)
                 doc_id = int(doc_id)
                 Scores[doc_id] = Scores.get(doc_id, 0) + tf * idf * date_factor
@@ -289,17 +413,27 @@ def perform_phrase_search(query):
         postings.append(r.hgetall(token))
     # Display Result
     common_doc_ids = set.intersection(
-        *(set(posting.keys()) for posting in postings))  # perform intersection to get common docs
+        *(set(posting.keys()) for posting in postings)
+    )  # perform intersection to get common docs
     final_doc_ids = set()
     if len(postings) > 1:
         for doc_id in common_doc_ids:
-            positions = list(np.array([posting[doc_id].split(",") for posting in postings], dtype=int))
+            positions = list(
+                np.array(
+                    [posting[doc_id].split(",") for posting in postings], dtype=int
+                )
+            )
             combinations = list(
-                itertools.product(*positions))  # calculate all combinations of positions of different tokens in a doc
+                itertools.product(*positions)
+            )  # calculate all combinations of positions of different tokens in a doc
             for combination in combinations:
-                valid = all([combination[i] + 1 == combination[i + 1] for i in
-                             range(len(combination) - 1)])  # checking if one token is followed by the other
-                if (valid):
+                valid = all(
+                    [
+                        combination[i] + 1 == combination[i + 1]
+                        for i in range(len(combination) - 1)
+                    ]
+                )  # checking if one token is followed by the other
+                if valid:
                     final_doc_ids.add(int(doc_id))
                     break
         return final_doc_ids
@@ -316,17 +450,27 @@ def perform_proximity_search(tokens, PROX):
         postings.append(r.hgetall(token))
     # Display Result
     common_doc_ids = set.intersection(
-        *(list(posting.keys()) for posting in postings))  # perform intersection to get common docs
+        *(list(posting.keys()) for posting in postings)
+    )  # perform intersection to get common docs
     final_doc_ids = set()
     if len(postings) > 1:
         for doc_id in common_doc_ids:
-            positions = set(np.array([posting[doc_id].split(",") for posting in postings], dtype=int))
+            positions = set(
+                np.array(
+                    [posting[doc_id].split(",") for posting in postings], dtype=int
+                )
+            )
             combinations = list(
-                itertools.product(*positions))  # calculate all combinations of positions of different tokens in a doc
+                itertools.product(*positions)
+            )  # calculate all combinations of positions of different tokens in a doc
             for combination in combinations:
-                valid = all([abs(combination[i] - combination[i + 1]) <= PROX for i in
-                             range(len(combination) - 1)])  # checking if the distance is lower than the max distance
-                if (valid):
+                valid = all(
+                    [
+                        abs(combination[i] - combination[i + 1]) <= PROX
+                        for i in range(len(combination) - 1)
+                    ]
+                )  # checking if the distance is lower than the max distance
+                if valid:
                     final_doc_ids.add(int(doc_id))
                     break
         return final_doc_ids
@@ -336,7 +480,7 @@ def perform_proximity_search(tokens, PROX):
 
 
 non_alpha_pattern_boolean = regex.compile(r'[^\w\s#"()]+')
-logical_operators = {'AND', 'OR', 'NOT'}
+logical_operators = {"AND", "OR", "NOT"}
 
 
 def desp_preprocessing_boolean(text):
@@ -344,11 +488,11 @@ def desp_preprocessing_boolean(text):
         language_code = detect(text)
         language_full_form = Language.get(language_code).language_name().lower()
     except:
-        language_full_form = 'unknown'
+        language_full_form = "unknown"
 
     # Removing punctuation except for '#'
     text = non_alpha_pattern_boolean.sub(" ", text)
-    pattern = r'\b(?!AND\b|OR\b|NOT\b)\w+\b'
+    pattern = r"\b(?!AND\b|OR\b|NOT\b)\w+\b"
     # Use a lambda function to lower the matched words
     text = re.sub(pattern, lambda x: x.group().lower(), text)
     if language_full_form in stemmed_languages:
@@ -356,11 +500,11 @@ def desp_preprocessing_boolean(text):
         # Preparing regex pattern without altering 'AND', 'NOT', 'OR'
         if language_full_form not in compiled_patterns:
             # Exclude 'AND', 'NOT', 'OR' from being treated as stopwords
-            pattern_stopwords = stopwords_by_language - {'AND', 'NOT', 'OR'}
-            pattern = r'\b(?:' + '|'.join(map(re.escape, pattern_stopwords)) + r')\b'
+            pattern_stopwords = stopwords_by_language - {"AND", "NOT", "OR"}
+            pattern = r"\b(?:" + "|".join(map(re.escape, pattern_stopwords)) + r")\b"
             compiled_patterns[language_full_form] = re.compile(pattern)
 
-        text = compiled_patterns[language_full_form].sub(' ', text)
+        text = compiled_patterns[language_full_form].sub(" ", text)
 
         if language_full_form not in stemmers:
             stemmers[language_full_form] = SnowballStemmer(language_full_form)
@@ -368,7 +512,10 @@ def desp_preprocessing_boolean(text):
 
         # Tokenizing while preserving 'AND', 'NOT', 'OR', and '#'
         tokens = re.findall(r'(\bAND\b|\bOR\b|\bNOT\b|\b\w+\b|[#"\(\)])', text)
-        words = [token if token in logical_operators else stemmer.stem(token) for token in tokens]
+        words = [
+            token if token in logical_operators else stemmer.stem(token)
+            for token in tokens
+        ]
     else:
         # For languages not supported for stemming, tokenize while preserving specific tokens
         words = re.findall(r'(\bAND\b|\bOR\b|\bNOT\b|\b\w+\b|[#"\(\)])', text)
@@ -409,17 +556,18 @@ def boolean_search(tokens):
             word_for_phrase.clear()
             proximity = False
         elif token == '"':
-            if (not phrase):  # start of the phrase is detected
+            if not phrase:  # start of the phrase is detected
                 phrase = True
             else:  # end of the phrase is detected search is performed
                 partial_result = perform_phrase_search(word_for_phrase)
                 current_result &= perform_phrase_search(word_for_phrase)
                 word_for_phrase.clear()
                 phrase = False
-        elif (phrase or proximity):
+        elif phrase or proximity:
             word_for_phrase.append(
-                token)  # if phrase or proximity search is being activated the words are added to the list until the end is detected
-        elif (hashtag):
+                token
+            )  # if phrase or proximity search is being activated the words are added to the list until the end is detected
+        elif hashtag:
             distance = int(token)  # distance is set
             hashtag = False
         else:
@@ -430,9 +578,9 @@ def boolean_search(tokens):
                 term_postings = set(list(posting_numeric))
             else:
                 term_postings = set()
-            if (len(operators) == 0):
+            if len(operators) == 0:
                 current_result &= term_postings  # This is made for the first word
-            while (len(operators) > 0):
+            while len(operators) > 0:
                 operator = operators.pop()
                 # perform operations in order of popping
                 if operator == "AND":
@@ -467,7 +615,7 @@ async def route_query(query: str, N_PAGE: int = Query(30, alias="page")):
 
 
 def fetch_documents(indexes):
-    indexes_str = ','.join([f"'{index}'" for index in indexes])
+    indexes_str = ",".join([f"'{index}'" for index in indexes])
     query = f"""
         SELECT json_agg(j ORDER BY j.idx)
         FROM (
@@ -542,5 +690,3 @@ app.include_router(api_router)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8006, log_level="debug")
-
-
