@@ -12,29 +12,29 @@ from multiprocessing import Pool
 load_dotenv()
 
 PG_CONNECTION_CONFIG = {
-    'host': os.getenv('PG_HOSTNAME'),
-    'dbname': os.getenv('PG_DB_NAME'),
-    'user': os.getenv('PG_USERNAME'),
-    'port': os.getenv('PG_POST'),
-    'password': os.getenv('PG_PASSWORD'),
+    "host": os.getenv("PG_HOSTNAME"),
+    "dbname": os.getenv("PG_DB_NAME"),
+    "user": os.getenv("PG_USERNAME"),
+    "port": os.getenv("PG_PORT"),
+    "password": os.getenv("PG_PASSWORD"),
 }
 
 REDIS_CONNECTION_CONFIG = {
-    'host': os.getenv('REDIS_HOST'),
-    'port': os.getenv('REDIS_PORT'),
-    'password': os.getenv('REDIS_PASSWORD'),
-    'decode_responses': True,
+    "host": os.getenv("REDIS_HOST"),
+    "port": os.getenv("REDIS_PORT"),
+    "password": os.getenv("REDIS_PASSWORD"),
+    "decode_responses": True,
 }
 
-FETCH_ALL_JOBS_VIEW = os.getenv('FETCH_ALL_JOBS_VIEW')
+FETCH_ALL_JOBS_VIEW = os.getenv("FETCH_ALL_JOBS_VIEW")
 
-JOBS_POOL_CURSOR_NAME = os.getenv('JOBS_POOL_CURSOR_NAME', default='JOBS_POOL_CURSOR')
-JOBS_POOL_CURSOR_SIZE = int(os.getenv('JOBS_POOL_CURSOR_SIZE', default=2000))
+JOBS_POOL_CURSOR_NAME = os.getenv("JOBS_POOL_CURSOR_NAME", default="JOBS_POOL_CURSOR")
+JOBS_POOL_CURSOR_SIZE = int(os.getenv("JOBS_POOL_CURSOR_SIZE", default=2000))
 
-JOB_INDEX_START_POSITION = int(os.getenv('JOBS_INDEX_START_POSITION', default=0))
-JOBS_INDEX_END_POSITION = os.getenv('JOBS_INDEX_END_POSITION', default=None)
+JOB_INDEX_START_POSITION = int(os.getenv("JOBS_INDEX_START_POSITION", default=0))
+JOBS_INDEX_END_POSITION = os.getenv("JOBS_INDEX_END_POSITION", default=None)
 
-NUMBER_OF_THREADS = int(os.getenv('NUMBER_OF_THREADS', default=5))
+NUMBER_OF_THREADS = int(os.getenv("NUMBER_OF_THREADS", default=5))
 
 
 def build_index(documents: list[list[str]]) -> dict:
@@ -59,7 +59,7 @@ def build_index(documents: list[list[str]]) -> dict:
             elif doc[0] not in index[term].keys():
                 index[term][doc[0]] = str(pos)
             else:
-                index[term][doc[0]] += f',{pos}'
+                index[term][doc[0]] += f",{pos}"
     del documents
     return index
 
@@ -79,11 +79,13 @@ def index_database_segment(offset: int = 0) -> tuple[int, float]:
         try:
             with psycopg2.connect(**PG_CONNECTION_CONFIG) as pg_connection:
                 with pg_connection.cursor() as cursor:
-                    cursor.execute(f"""
+                    cursor.execute(
+                        f"""
                     SELECT * FROM {FETCH_ALL_JOBS_VIEW} 
                     WHERE id > {offset} AND id <= {offset + JOBS_POOL_CURSOR_SIZE}  
                     ORDER BY id;
-                    """)
+                    """
+                    )
                     data = cursor.fetchall()
             update_remote_index(build_index(data))
             del data
@@ -93,7 +95,7 @@ def index_database_segment(offset: int = 0) -> tuple[int, float]:
             print("PG DB Connection lost, reconnecting ...")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     start_time = time.perf_counter()
 
     N = int(JOBS_INDEX_END_POSITION) if JOBS_INDEX_END_POSITION else None
@@ -106,7 +108,12 @@ if __name__ == '__main__':
 
     with Pool(processes=NUMBER_OF_THREADS) as pool:
         inputs = range(0, N + JOBS_POOL_CURSOR_SIZE, JOBS_POOL_CURSOR_SIZE)
-        execution_times = [x for x in tqdm.tqdm(pool.imap_unordered(index_database_segment, inputs), total=len(inputs))]
+        execution_times = [
+            x
+            for x in tqdm.tqdm(
+                pool.imap_unordered(index_database_segment, inputs), total=len(inputs)
+            )
+        ]
 
     [print(f"{x[0]:9} | {x[1]}") for x in execution_times]
     print("--- %s seconds ---" % (time.perf_counter() - start_time))
