@@ -1,6 +1,6 @@
 FROM python:3.9-slim-buster
 
-LABEL version=0.1
+LABEL version=0.2.2
 
 ENV PYTHONUNBUFFERED True
 
@@ -14,8 +14,6 @@ RUN mkdir app
 ENV APP_HOME /app
 WORKDIR $APP_HOME
 
-ENV PORT 5587
-
 ENV PATH="${PATH}:/root/.local/bin"
 ENV PYTHONPATH=.
 
@@ -26,4 +24,4 @@ RUN pip3 install -r ./requirements.txt
 COPY services/backend/src/ .
 COPY services/utils/ utils/
 
-CMD exec uvicorn main:app --host 0.0.0.0 --port ${PORT}
+CMD exec uvicorn main_redis:app --host 0.0.0.0 --port ${PORT}
