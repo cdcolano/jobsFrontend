@@ -1,142 +1,43 @@
-from fastapi import APIRouter
 import time
 import os
-from fastapi import FastAPI, Query
-from fastapi.middleware.cors import CORSMiddleware
 import itertools
 import numpy as np
 import psycopg2
-from tqdm import tqdm
-from dateutil import parser
-from datetime import datetime
 import regex
-from nltk.corpus import stopwords
-from nltk.stem.snowball import SnowballStemmer
 import re
 import nltk
-from langdetect import detect
-from langcodes import Language
 import redis
 import uvicorn
 import threading
-from dotenv import load_dotenv
-import sys
-from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor
 import schedule
+
+from fastapi import APIRouter
+from fastapi import FastAPI, Query
+from fastapi.middleware.cors import CORSMiddleware
+from tqdm import tqdm
+from dateutil import parser
+from datetime import datetime
+from nltk.corpus import stopwords
+from nltk.stem.snowball import SnowballStemmer
+from langdetect import detect
+from langcodes import Language
+from dotenv import load_dotenv
+from concurrent.futures import ThreadPoolExecutor
+
 from utils.preprocessing import preprocess
+from thesaurus import job_posting_thesaurus
 
+app = FastAPI(title="Gateway", openapi_url="/openapi.json")
 
-load_dotenv()
-
-nltk.download('stopwords')
-
-PG_CONNECTION_CONFIG = {
-    'host': os.getenv('PG_HOSTNAME'),
-    'dbname': os.getenv('PG_DB_NAME'),
-    'user': os.getenv('PG_USERNAME'),
-    'port': os.getenv('PG_POST'),
-    'password': os.getenv('PG_PASSWORD'),
-}
-REDIS_CONNECTION_CONFIG = {
-    'host': os.getenv('REDIS_HOST'),
-    'port': os.getenv('REDIS_PORT'),
-    'password': os.getenv('REDIS_PASSWORD'),
-    'decode_responses': True,
-}
-
-
-r = redis.Redis(**REDIS_CONNECTION_CONFIG)
-
-job_posting_thesaurus = {
-    "developer": ["developer", "programmer", "coder", "software"],
-    "data": ["data", "information", "intelligence"],
-    "manager": ["manager", "supervisor", "team leader", "head", "director"],
-    "remote": ["remote", "home", "virtual", "offsite", "telecommute", "distributed"],
-    "full-time": ["full-time", "permanent"],
-    "part-time": ["part-time", "temporary", "contract", "freelance", "hourly", "casual"],
-    "marketing": ["marketing", "SEO", "branding"],
-    "writer": ["writer", "copywriter", "author", "editor"],
-    "consultant": ["consultant", "advisor", "consulting", "strategy", "management"],
-    "service": ["service", "support", "client service", "help"],
-    "HR": ["HR", "human resources", "HR manager", "recruitment", "talent"],
-    "finance": ["finance", "accountant", "auditor", "controller", "finance consultant"],
-    "education": ["education", "teacher", "educator", "instructor", "professor", "tutor"],
-    "healthcare": ["healthcare", "nurse", "doctor", "medical", "pharmacist"],
-    "intern": ["intern", "internship", "trainee", "apprentice"],
-    "entry level": ["entry level", "junior", "associate", "beginner", "trainee", "starter"],
-    "senior": ["senior", "lead", "principal", "chief"],
-    "executive": ["executive", "CEO", "CFO", "CTO"],
-    "programmer": ["developer", "programmer", "coder", "software"],
-    "coder": ["developer", "programmer", "coder", "software"],
-    "software": ["developer", "programmer", "coder", "software"],
-    "information": ["data", "information", "intelligence"],
-    "intelligence": ["data", "information", "intelligence"],
-    "supervisor": ["manager", "supervisor", "team leader", "head", "director"],
-    "team leader": ["manager", "supervisor", "team leader", "head", "director"],
-    "head": ["manager", "supervisor", "team leader", "head", "director"],
-    "director": ["manager", "supervisor", "team leader", "head", "director"],
-    "home": ["remote", "home", "virtual", "offsite", "telecommute", "distributed"],
-    "virtual": ["remote", "home", "virtual", "offsite", "telecommute", "distributed"],
-    "offsite": ["remote", "home", "virtual", "offsite", "telecommute", "distributed"],
-    "telecommute": ["remote", "home", "virtual", "offsite", "telecommute", "distributed"],
-    "distributed": ["remote", "home", "virtual", "offsite", "telecommute", "distributed"],
-    "permanent": ["full-time", "permanent"],
-    "temporary": ["part-time", "temporary", "contract", "freelance", "hourly", "casual"],
-    "contract": ["part-time", "temporary", "contract", "freelance", "hourly", "casual"],
-    "freelance": ["part-time", "temporary", "contract", "freelance", "hourly", "casual"],
-    "hourly": ["part-time", "temporary", "contract", "freelance", "hourly", "casual"],
-    "casual": ["part-time", "temporary", "contract", "freelance", "hourly", "casual"],
-    "SEO": ["marketing", "SEO", "branding"],
-    "branding": ["marketing", "SEO", "branding"],
-    "copywriter": ["writer", "copywriter", "author", "editor"],
-    "author": ["writer", "copywriter", "author", "editor"],
-    "editor": ["writer", "copywriter", "author", "editor"],
-    "advisor": ["consultant", "advisor", "consulting", "strategy", "management"],
-    "consulting": ["consultant", "advisor", "consulting", "strategy", "management"],
-    "strategy": ["consultant", "advisor", "consulting", "strategy", "management"],
-    "management": ["consultant", "advisor", "consulting", "strategy", "management"],
-    "support": ["service", "support", "client service", "help"],
-    "client service": ["service", "support", "client service", "help"],
-    "help": ["service", "support", "client service", "help"],
-    "human resources": ["HR", "human resources", "HR manager", "recruitment", "talent"],
-    "HR manager": ["HR", "human resources", "HR manager", "recruitment", "talent"],
-    "recruitment": ["HR", "human resources", "HR manager", "recruitment", "talent"],
-    "talent": ["HR", "human resources", "HR manager", "recruitment", "talent"],
-    "accountant": ["finance", "accountant", "auditor", "controller", "finance consultant"],
-    "auditor": ["finance", "accountant", "auditor", "controller", "finance consultant"],
-    "controller": ["finance", "accountant", "auditor", "controller", "finance consultant"],
-    "finance consultant": ["finance", "accountant", "auditor", "controller", "finance consultant"],
-    "teacher": ["education", "teacher", "educator", "instructor", "professor", "tutor"],
-    "educator": ["education", "teacher", "educator", "instructor", "professor", "tutor"],
-    "instructor": ["education", "teacher", "educator", "instructor", "professor", "tutor"],
-    "professor": ["education", "teacher", "educator", "instructor", "professor", "tutor"],
-    "tutor": ["education", "teacher", "educator", "instructor", "professor", "tutor"],
-    "nurse": ["healthcare", "nurse", "doctor", "medical", "pharmacist"],
-    "doctor": ["healthcare", "nurse", "doctor", "medical", "pharmacist"],
-    "medical": ["healthcare", "nurse", "doctor", "medical", "pharmacist"],
-    "pharmacist": ["healthcare", "nurse", "doctor", "medical", "pharmacist"],
-    "internship": ["intern", "internship", "trainee", "apprentice"],
-    "trainee": ["entry level", "junior", "associate", "beginner", "trainee", "starter"],
-    "apprentice": ["intern", "internship", "trainee", "apprentice"],
-    "junior": ["entry level", "junior", "associate", "beginner", "trainee", "starter"],
-    "associate": ["entry level", "junior", "associate", "beginner", "trainee", "starter"],
-    "beginner": ["entry level", "junior", "associate", "beginner", "trainee", "starter"],
-    "starter": ["entry level", "junior", "associate", "beginner", "trainee", "starter"],
-    "lead": ["senior", "lead", "principal", "chief"],
-    "principal": ["senior", "lead", "principal", "chief"],
-    "chief": ["senior", "lead", "principal", "chief"],
-    "CEO": ["executive", "CEO", "CFO", "CTO"],
-    "CFO": ["executive", "CEO", "CFO", "CTO"],
-    "CTO": ["executive", "CEO", "CFO", "CTO"]
-}
-
-connection = psycopg2.connect(**PG_CONNECTION_CONFIG)
-DOC_IDS = []
-N = 0
-ID2DATE = {}
-
-parsed_cache = {}
+api_router = APIRouter()
+origins = ["*"]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
 
 
 def parse_date(date_str, current_time, dayfirst=True):
@@ -148,7 +49,7 @@ def parse_date(date_str, current_time, dayfirst=True):
         date_factor = current_time - parsed_date
         days_diff = abs(date_factor.days)
         date_factor = 1 / (
-                    1 + days_diff / 30)  # Adding 1 to avoid division by zero and ensure recent docs have higher factor
+                1 + days_diff / 30)  # Adding 1 to avoid division by zero and ensure recent docs have higher factor
         parsed_cache[date_str] = date_factor  # Cache the result
         return date_factor
     except ValueError:
@@ -156,16 +57,15 @@ def parse_date(date_str, current_time, dayfirst=True):
         return None
 
 
-min_date_value = parse_date("0001-01-01", datetime.now())
-parsed_cache = {"": min_date_value}
-
 def fetch_token(token):
     return r.hgetall(token)
+
 
 def fetch_postings(query):
     with ThreadPoolExecutor(max_workers=10) as executor:
         postings_list = list(executor.map(fetch_token, query))
     return postings_list
+
 
 def update_database_info():
     global DOC_IDS, N, ID2DATE
@@ -199,32 +99,11 @@ def update_database_info():
     ID2DATE[''] = parse_date("", current_time)
 
 
-app = FastAPI(title="Gateway", openapi_url="/openapi.json")
-
-api_router = APIRouter()
-origins = ["*"]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"]
-)
-
-
 def getAllDocs(positional_index):
     all_doc_ids = set()
     for term_data in positional_index.values():
         all_doc_ids.update(term_data['posting_list'].keys())
     return all_doc_ids
-
-
-CURRENT_RESULT = []
-compiled_patterns = {}
-stemmers = {}
-stemmed_languages = ["arabic", "danish", "dutch", "english", "finnish", "french", "german", "hungarian", "italian",
-                     "norwegian", "portuguese", "romanian", "russian", "spanish", "swedish"]
-non_alpha_pattern = regex.compile(r'\p{P}')
 
 
 def desp_preprocessing(text):
@@ -338,10 +217,6 @@ def perform_proximity_search(tokens, PROX):
         return common_doc_ids
 
 
-non_alpha_pattern_boolean = regex.compile(r'[^\w\s#"()]+')
-logical_operators = {'AND', 'OR', 'NOT'}
-
-
 def desp_preprocessing_boolean(text):
     try:
         language_code = detect(text)
@@ -376,9 +251,6 @@ def desp_preprocessing_boolean(text):
         # For languages not supported for stemming, tokenize while preserving specific tokens
         words = re.findall(r'(\bAND\b|\bOR\b|\bNOT\b|\b\w+\b|[#"\(\)])', text)
     return words
-
-
-tokenization_regex_boolean = r'(\bAND\b|\bOR\b|\bNOT\b|\b\w+\b|[#"\(\)])'
 
 
 # boolean search function
@@ -458,7 +330,7 @@ def expand_query(query):
 # CURRENT RESULT IS DESIGNED FOR PAGINATION, then establishing a page size is easey to keep track of the page and retrieve the actual docs
 @app.get("/search/")
 async def route_query(query: str, N_PAGE: int = Query(30, alias="page")):
-    start=time.time()
+    start = time.time()
     pattern = r'\b(AND|OR|NOT)\b|["#]'
     if re.search(pattern, query):
         global CURRENT_RESULT
@@ -466,8 +338,8 @@ async def route_query(query: str, N_PAGE: int = Query(30, alias="page")):
     else:
         query = expand_query(query)
         CURRENT_RESULT = optimized_tfidf(query, N)
-    result=await retrieve_jobs(1, N_PAGE)
-    print(time.time()-start)
+    result = await retrieve_jobs(1, N_PAGE)
+    print(time.time() - start)
     return result
 
 
@@ -490,11 +362,6 @@ def fetch_documents(indexes):
 
     cursor.close()
     return result
-
-
-pagination_offset = 0
-
-import json
 
 
 @app.get("/jobs/")
@@ -529,13 +396,59 @@ async def retrieve_jobs(page: int, number_per_page: int):
         documents_fetched = {}
     return documents_fetched
 
-schedule.every().day.at("06:00").do(update_database_info)
+
 def run_periodically():
     while True:
         schedule.run_pending()
         time.sleep(1)
         # Wait for 24 hours (86400 seconds)
 
+
+load_dotenv()
+
+nltk.download('stopwords')
+
+PG_CONNECTION_CONFIG = {
+    'host': os.getenv('PG_HOSTNAME'),
+    'dbname': os.getenv('PG_DB_NAME'),
+    'user': os.getenv('PG_USERNAME'),
+    'port': os.getenv('PG_POST'),
+    'password': os.getenv('PG_PASSWORD'),
+}
+REDIS_CONNECTION_CONFIG = {
+    'host': os.getenv('REDIS_HOST'),
+    'port': os.getenv('REDIS_PORT'),
+    'password': os.getenv('REDIS_PASSWORD'),
+    'decode_responses': True,
+}
+
+r = redis.Redis(**REDIS_CONNECTION_CONFIG)
+
+connection = psycopg2.connect(**PG_CONNECTION_CONFIG)
+DOC_IDS = []
+N = 0
+ID2DATE = {}
+
+parsed_cache = {}
+
+min_date_value = parse_date("0001-01-01", datetime.now())
+parsed_cache = {"": min_date_value}
+
+CURRENT_RESULT = []
+compiled_patterns = {}
+stemmers = {}
+stemmed_languages = ["arabic", "danish", "dutch", "english", "finnish", "french", "german", "hungarian", "italian",
+                     "norwegian", "portuguese", "romanian", "russian", "spanish", "swedish"]
+non_alpha_pattern = regex.compile(r'\p{P}')
+
+non_alpha_pattern_boolean = regex.compile(r'[^\w\s#"()]+')
+logical_operators = {'AND', 'OR', 'NOT'}
+
+tokenization_regex_boolean = r'(\bAND\b|\bOR\b|\bNOT\b|\b\w+\b|[#"\(\)])'
+
+pagination_offset = 0
+
+schedule.every().day.at("06:00").do(update_database_info)
 
 update_database_info()
 thread = threading.Thread(target=run_periodically)
@@ -547,5 +460,3 @@ app.include_router(api_router)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8006, log_level="debug")
-
-
