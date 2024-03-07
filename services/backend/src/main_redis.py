@@ -24,9 +24,20 @@ import sys
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import schedule
+from search_suggestion import SearchSuggestion
+from spellchecker import SpellChecker
+from autocorrect import Speller
+from textblob import TextBlob
+from collections import Counter
+import random
+current_script_dir = os.path.dirname(os.path.abspath(__file__))
+grandparent_dir = os.path.dirname(os.path.dirname(current_script_dir))
+
+# Add the grandparent directory to sys.path
+if grandparent_dir not in sys.path:
+    sys.path.append(grandparent_dir)
+
 from utils.preprocessing import preprocess
-
-
 load_dotenv()
 
 nltk.download('stopwords')
@@ -287,6 +298,9 @@ def optimized_tfidf(query, N_DOCS):
     sorted_docs = sorted(Scores, key=Scores.get, reverse=True)
     return sorted_docs
 
+
+
+
     # return [(doc_id, round(score, 4)) for doc_id, score in sorted_docs]
 
 
@@ -316,7 +330,7 @@ def perform_phrase_search(query):
 
 def perform_proximity_search(tokens, PROX):
     # tokens=pre_process(tokens)
-    postings = fetch_postings(query)
+    postings = fetch_postings(tokens)
     # Display Result
     common_doc_ids = set.intersection(
         *(list(posting.keys()) for posting in postings))  # perform intersection to get common docs
@@ -453,6 +467,60 @@ def expand_query(query):
             for synonym in job_posting_thesaurus[word]:
                 new_query = new_query + " " + synonym
     return new_query
+
+
+
+
+
+def weighted_spell_check_en(term):
+    # Weighted spell check using multiple libraries
+    spellchecker = SpellChecker()
+    autocorrect = Speller(lang='en')
+    textblob = TextBlob(term)
+
+    # Calculate weights for each library
+    spellchecker_weight = 0.4
+    autocorrect_weight = 0.3
+    textblob_weight = 0.3
+
+    # Spell check using each library
+    spellchecker_correction = spellchecker.correction(term)
+    autocorrect_correction = autocorrect(term)
+    textblob_correction = str(textblob.correct())
+    corrections=[spellchecker_correction,autocorrect_correction,textblob_correction]
+    corrections_count = Counter(corrections)
+
+    # Find the most common correction, if there's a tie, this returns one randomly
+    most_common_correction, count = corrections_count.most_common(1)[0]
+
+    if count > 1:  # If at least two libraries agree on the correction
+        corrected_term = most_common_correction
+    else:
+        # No consensus; choose based on weights (simplified approach)
+        weights = [spellchecker_weight, autocorrect_weight, textblob_weight]
+        corrected_term = random.choices(corrections, weights=weights, k=1)[0]
+    return corrected_term
+
+
+def weighted_spell_check_query(query):
+    corrected_query = []
+    # Split the query into individual terms
+    terms = query.split()
+    for term in terms:
+        language = detect(term)
+        if language == 'en':  # Check if the term is in English
+            # Weighted spell check using multiple libraries
+            corrected_term = weighted_spell_check_en(term)
+        else:
+            corrected_term = term  # Retain word if it's not in English
+        corrected_query.append(corrected_term)
+    return ' '.join(corrected_query)
+
+
+@app.get("/suggest/")
+async def route_query(query: str):
+    return weighted_spell_check_query(query)
+    #return suggestions
 
 
 # CURRENT RESULT IS DESIGNED FOR PAGINATION, then establishing a page size is easey to keep track of the page and retrieve the actual docs
