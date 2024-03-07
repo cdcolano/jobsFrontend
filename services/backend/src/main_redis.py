@@ -414,7 +414,6 @@ def boolean_search(tokens):
             if (not phrase):  # start of the phrase is detected
                 phrase = True
             else:  # end of the phrase is detected search is performed
-                partial_result = perform_phrase_search(word_for_phrase)
                 current_result &= perform_phrase_search(word_for_phrase)
                 word_for_phrase.clear()
                 phrase = False
