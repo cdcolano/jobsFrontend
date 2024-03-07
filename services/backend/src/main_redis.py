@@ -24,7 +24,6 @@ import sys
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import schedule
-from search_suggestion import SearchSuggestion
 from spellchecker import SpellChecker
 from autocorrect import Speller
 from textblob import TextBlob
