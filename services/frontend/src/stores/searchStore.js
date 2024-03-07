@@ -15,7 +15,7 @@ export const useSearchStore = defineStore(
 
         watch(query, async () => {
             results.value = null
-            fetch('http://localhost:5001/search/?query=' + query.value)
+            fetch('/api/search/?query=' + query.value)
                 .then(response => response.json())
                 .then(data => results.value = data);
         })
