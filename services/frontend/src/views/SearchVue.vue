@@ -23,13 +23,14 @@ store.search(route.params.query)
             <ul v-if="results" class="flex flex-col w-10/12 px-3 divide-y-2 divide-slate-200
                         dark:divide-slate-600">
                 <li v-for="result in results" :key="result.idx">
-                    <search-result
-                        :title="result.title"
-                        :company="result.company"
-                        :description="result.description"
-                        :location="result.location"
-                    >
-                    </search-result>
+                    <a :href="result.link" target="_blank" rel="noopener noreferrer">
+                        <search-result
+                            :title="result.title"
+                            :company="result.company"
+                            :description="result.description"
+                            :location="result.location"
+                        ></search-result>
+                    </a>
                 </li>
             </ul>
             <ul v-else class="flex flex-col w-10/12 px-3 divide-y-2 divide-slate-200

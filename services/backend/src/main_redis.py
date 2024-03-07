@@ -20,6 +20,10 @@ import redis
 import uvicorn
 import threading
 from dotenv import load_dotenv
+import sys
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+import schedule
 from utils.preprocessing import preprocess
 
 
@@ -155,6 +159,13 @@ def parse_date(date_str, current_time, dayfirst=True):
 min_date_value = parse_date("0001-01-01", datetime.now())
 parsed_cache = {"": min_date_value}
 
+def fetch_token(token):
+    return r.hgetall(token)
+
+def fetch_postings(query):
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        postings_list = list(executor.map(fetch_token, query))
+    return postings_list
 
 def update_database_info():
     global DOC_IDS, N, ID2DATE
@@ -262,10 +273,7 @@ def optimized_tfidf(query, N_DOCS):
     tokens = preprocess(query)
     Scores = {}
     # Use pipeline to reduce the number of calls to Redis
-    pipe = r.pipeline()
-    for token in tokens:
-        pipe.hgetall(token)
-    postings_list = pipe.execute()
+    postings_list = fetch_postings(tokens)
     for postings in postings_list:
         if postings:
             df = len(postings)
@@ -284,9 +292,7 @@ def optimized_tfidf(query, N_DOCS):
 
 def perform_phrase_search(query):
     # tokens=pre_process(query)
-    postings = []
-    for token in query:
-        postings.append(r.hgetall(token))
+    postings = fetch_postings(query)
     # Display Result
     common_doc_ids = set.intersection(
         *(set(posting.keys()) for posting in postings))  # perform intersection to get common docs
@@ -310,10 +316,7 @@ def perform_phrase_search(query):
 
 def perform_proximity_search(tokens, PROX):
     # tokens=pre_process(tokens)
-    postings = []
-    for token in tokens:
-        # Fetch the document for the current token from MongoDB
-        postings.append(r.hgetall(token))
+    postings = fetch_postings(query)
     # Display Result
     common_doc_ids = set.intersection(
         *(list(posting.keys()) for posting in postings))  # perform intersection to get common docs
@@ -385,7 +388,7 @@ def boolean_search(tokens):
     # CHECKING IF #WORK
     # COMPROBAR QUE EL TDIDF SE ORDENA DESCENDENTEMENTE Y ELIMINAR OR AND Y ETC DE LA REGEX
 
-    tokens = preprocess_boolean(tokens, tokenization_regex=tokenization_regex_boolean)
+    tokens = preprocess(tokens, tokenization_regex=tokenization_regex_boolean)
     # doc_ids=set(getAllDocs(positional_index)) #if query is empty all docs are retrived
     current_result = set(DOC_IDS)
     operators = []
@@ -412,7 +415,6 @@ def boolean_search(tokens):
             if (not phrase):  # start of the phrase is detected
                 phrase = True
             else:  # end of the phrase is detected search is performed
-                partial_result = perform_phrase_search(word_for_phrase)
                 current_result &= perform_phrase_search(word_for_phrase)
                 word_for_phrase.clear()
                 phrase = False
@@ -456,6 +458,7 @@ def expand_query(query):
 # CURRENT RESULT IS DESIGNED FOR PAGINATION, then establishing a page size is easey to keep track of the page and retrieve the actual docs
 @app.get("/search/")
 async def route_query(query: str, N_PAGE: int = Query(30, alias="page")):
+    start=time.time()
     pattern = r'\b(AND|OR|NOT)\b|["#]'
     if re.search(pattern, query):
         global CURRENT_RESULT
@@ -463,7 +466,9 @@ async def route_query(query: str, N_PAGE: int = Query(30, alias="page")):
     else:
         query = expand_query(query)
         CURRENT_RESULT = optimized_tfidf(query, N)
-    return await retrieve_jobs(1, N_PAGE)
+    result=await retrieve_jobs(1, N_PAGE)
+    print(time.time()-start)
+    return result
 
 
 def fetch_documents(indexes):
@@ -524,11 +529,11 @@ async def retrieve_jobs(page: int, number_per_page: int):
         documents_fetched = {}
     return documents_fetched
 
-
+schedule.every().day.at("06:00").do(update_database_info)
 def run_periodically():
     while True:
-        time.sleep(86400)
-        update_database_info()
+        schedule.run_pending()
+        time.sleep(1)
         # Wait for 24 hours (86400 seconds)
 
 
