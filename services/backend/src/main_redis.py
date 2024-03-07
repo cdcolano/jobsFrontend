@@ -506,19 +506,14 @@ def weighted_spell_check_query(query):
     # Split the query into individual terms
     terms = query.split()
     for term in terms:
-        language = detect(term)
-        if language == 'en':  # Check if the term is in English
-            # Weighted spell check using multiple libraries
             corrected_term = weighted_spell_check_en(term)
-        else:
-            corrected_term = term  # Retain word if it's not in English
-        corrected_query.append(corrected_term)
+            corrected_query.append(corrected_term)
     return ' '.join(corrected_query)
 
 
 @app.get("/suggest/")
 async def route_query(query: str):
-    return weighted_spell_check_query(query)
+    return [weighted_spell_check_query(query)]
     #return suggestions
 
 
