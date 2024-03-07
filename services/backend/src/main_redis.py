@@ -23,6 +23,7 @@ from dotenv import load_dotenv
 import sys
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+import schedule
 from utils.preprocessing import preprocess
 
 
@@ -528,11 +529,11 @@ async def retrieve_jobs(page: int, number_per_page: int):
         documents_fetched = {}
     return documents_fetched
 
-
+schedule.every().day.at("06:00").do(update_database_info)
 def run_periodically():
     while True:
-        time.sleep(86400)
-        update_database_info()
+        schedule.run_pending()
+        time.sleep(1)
         # Wait for 24 hours (86400 seconds)
 
 
