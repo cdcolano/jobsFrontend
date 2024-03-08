@@ -10,8 +10,12 @@ import redis
 import uvicorn
 import threading
 import schedule
+import logging
 
-from fastapi import FastAPI, Query, HTTPException
+import config.pg_config as db
+import searchService
+
+from fastapi import FastAPI, Query, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from tqdm import tqdm
 from dateutil import parser
@@ -25,7 +29,10 @@ from concurrent.futures import ThreadPoolExecutor
 
 from thesaurus import job_posting_thesaurus
 from utils.preprocessing import preprocess,  preprocess_query, BOOL_OPERATORS
-import searchService
+
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('uvicorn')
 
 app = FastAPI()
 
@@ -36,6 +43,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"]
 )
+
+
+@app.on_event("startup")
+async def startup_event():
+    database_instance = db.Database(**PG_CONNECTION_CONFIG)
+    await database_instance.connect()
+    app.state.db = database_instance
+    logger.info("Server Startup")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    if not app.state.db:
+        await app.state.db.close()
+    logger.info("Server Shutdown")
 
 
 def parse_date(date_str, current_time, dayfirst=True):
@@ -326,23 +348,17 @@ def expand_query(query):
 
 
 @app.get("/search/")
-async def search(query: str, N_PAGE: int = Query(30, alias="page")):
+async def search(query: str, request: Request, page: int = 1):
     _start_time = time.time()
-    # pattern = r'\b(AND|OR|NOT)\b|["#]'
-    # if re.search(pattern, query):
-    #     global CURRENT_RESULT
-    #     CURRENT_RESULT = boolean_search(query)
-    # else:
-    #     query = expand_query(query)
-    #     CURRENT_RESULT = optimized_tfidf(query, N)
-    # result = await retrieve_jobs(1, N_PAGE)
-
+    if page < 1:
+        raise HTTPException(status_code=400, detail='Page value must be equal or greater than 1.')
     try:
-        searchService.search(query)
+        results = await searchService.search(query, request, page=page)
         return {
             'processing': time.time() - _start_time,
             'data': [
-                query
+                query,
+                [{k: v for k, v in x.items()} for x in results]
             ]
         }
     except Exception as e:  # General / Unknown error
@@ -463,4 +479,4 @@ thread.daemon = True
 thread.start()
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8006, log_level="debug")
+    uvicorn.run(app, host="0.0.0.0", port=8006, log_level="info")

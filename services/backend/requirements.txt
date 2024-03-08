@@ -25,3 +25,4 @@ redis>=5.0.2
 python-dotenv>=1.0.1
 numpy>=1.26.4
 schedule>=1.2.1
+asyncpg>=0.29.0

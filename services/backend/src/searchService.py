@@ -1,6 +1,13 @@
+import re
+
 from numpy import log10
+from logging import getLogger
+from fastapi import Request
+
 from utils.preprocessing import preprocess_query, BOOL_OPERATORS
 from redisService import get_index
+
+logger = getLogger('uvicorn')
 
 
 # def boolean_search(query: list[str], index: str, verbose: bool = False) -> pd.DataFrame:
@@ -221,7 +228,7 @@ def ranked_search(tokens: list[str], n_docs):
     for document_entries in get_index(tokens):
         if not document_entries:
             continue
-        idf = log10(n_docs / len(document_entries))
+        idf = log10(n_docs / len(document_entries.keys()))
         for doc_id, idx_term in document_entries.items():
             # date_factor = ID2DATE.get(doc_id, ID2DATE[''])
             doc_id = int(doc_id)
@@ -230,18 +237,21 @@ def ranked_search(tokens: list[str], n_docs):
     return sorted(scores, key=scores.get, reverse=True)
 
 
-def search(query):
+async def search(query, request: Request, page: int = 1, size: int = 10):
     _query = preprocess_query(query.split(' '))
-
+    _offset = (page * size) - size
     # BOOLEAN SEARCH
-    # if re.search('|'.join(BOOL_OPERATORS), ' '.join(_query)):
+    if re.search('|'.join(BOOL_OPERATORS), ' '.join(_query)):
+        pass
     #     results = boolean_search(query)
     #     if results.empty: return None
     #     results = results.DOCNOS[0].split(',') if results.DOCNOS[0] else ''
     #     return results if '' not in results else results.remove('')
     # RANKED SEARCH
-    # else:
-    index = get_index(_query)
-    # results = ranked_search(_query, 1000000)
-    # return [str(x) + ',' + str(y) for x, y in results.items()]
-    return index
+    else:
+        n_docs = await request.app.state.db.fetch_rows('SELECT count(*) as count FROM jobs')
+        doc_ids = ranked_search(_query, n_docs[0].get('count'))
+        results = await request.app.state.db.fetch_rows(
+            f'SELECT * FROM jobs WHERE id in ({",".join([str(d) for d in doc_ids[_offset:_offset + size]])})'
+        )
+        return results
