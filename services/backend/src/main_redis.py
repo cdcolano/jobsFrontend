@@ -11,8 +11,7 @@ import uvicorn
 import threading
 import schedule
 
-from fastapi import APIRouter
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from tqdm import tqdm
 from dateutil import parser
@@ -24,16 +23,15 @@ from langcodes import Language
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor
 
-from utils.preprocessing import preprocess
 from thesaurus import job_posting_thesaurus
+from utils.preprocessing import preprocess,  preprocess_query, BOOL_OPERATORS
+import searchService
 
-app = FastAPI(title="Gateway", openapi_url="/openapi.json")
+app = FastAPI()
 
-api_router = APIRouter()
-origins = ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"]
@@ -327,20 +325,28 @@ def expand_query(query):
     return new_query
 
 
-# CURRENT RESULT IS DESIGNED FOR PAGINATION, then establishing a page size is easey to keep track of the page and retrieve the actual docs
 @app.get("/search/")
-async def route_query(query: str, N_PAGE: int = Query(30, alias="page")):
-    start = time.time()
-    pattern = r'\b(AND|OR|NOT)\b|["#]'
-    if re.search(pattern, query):
-        global CURRENT_RESULT
-        CURRENT_RESULT = boolean_search(query)
-    else:
-        query = expand_query(query)
-        CURRENT_RESULT = optimized_tfidf(query, N)
-    result = await retrieve_jobs(1, N_PAGE)
-    print(time.time() - start)
-    return result
+async def search(query: str, N_PAGE: int = Query(30, alias="page")):
+    _start_time = time.time()
+    # pattern = r'\b(AND|OR|NOT)\b|["#]'
+    # if re.search(pattern, query):
+    #     global CURRENT_RESULT
+    #     CURRENT_RESULT = boolean_search(query)
+    # else:
+    #     query = expand_query(query)
+    #     CURRENT_RESULT = optimized_tfidf(query, N)
+    # result = await retrieve_jobs(1, N_PAGE)
+
+    try:
+        searchService.search(query)
+        return {
+            'processing': time.time() - _start_time,
+            'data': [
+                query
+            ]
+        }
+    except Exception as e:  # General / Unknown error
+        raise HTTPException(status_code=500, detail={'query': query, 'message': f'Internal server error. {e}'})
 
 
 def fetch_documents(indexes):
@@ -455,8 +461,6 @@ thread = threading.Thread(target=run_periodically)
 # Daemon threads are killed when the main program exits
 thread.daemon = True
 thread.start()
-
-app.include_router(api_router)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8006, log_level="debug")
