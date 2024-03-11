@@ -1,13 +1,18 @@
 import asyncpg
 
 from logging import getLogger
-from utils.constants import PG_CONNECTION_CONFIG
+from ..utils.constants import PG_CONNECTION_CONFIG
 
 logger = getLogger('uvicorn')
 
 
 class Database:
-    def __init__(self, user, password, host, dbname, port="5432"):
+    def __init__(self,
+                 user=PG_CONNECTION_CONFIG['user'],
+                 password=PG_CONNECTION_CONFIG['password'],
+                 host=PG_CONNECTION_CONFIG['host'],
+                 dbname=PG_CONNECTION_CONFIG['dbname'],
+                 port="5432"):
         self.user = user
         self.password = password
         self.host = host

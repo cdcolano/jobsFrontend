@@ -1,6 +1,6 @@
 import redis
 
-from utils.constants import REDIS_CONNECTION_CONFIG
+from ..utils.constants import REDIS_CONNECTION_CONFIG
 
 
 def create_redis():
