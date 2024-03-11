@@ -1,27 +1,31 @@
 import numpy as np
-import redis as r
+import logging
 
 from itertools import product
-from concurrent.futures import ThreadPoolExecutor
 
 from .utils.preprocessing import preprocess
+from .redisService import get_index
+
+logger = logging.getLogger('uvicorn')
 
 tokenization_regex_boolean = r'(\bAND\b|\bOR\b|\bNOT\b|\b\w+\b|[#"\(\)])'
 
-
-def fetch_token(token):
-    return r.hgetall(token)
-
-
-def fetch_postings(query):
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        postings_list = list(executor.map(fetch_token, query))
-    return postings_list
+# r = redis.Redis(**REDIS_CONNECTION_CONFIG)
+#
+# def fetch_token(token):
+#     return r.hgetall(token)
+#
+#
+# def fetch_postings(query):
+#     with ThreadPoolExecutor(max_workers=10) as executor:
+#         postings_list = list(executor.map(fetch_token, query))
+#     return postings_list
 
 
 def perform_phrase_search(query):
     # tokens=pre_process(query)
-    postings = fetch_postings(query)
+    # postings = fetch_postings(query)
+    postings = list(get_index(query).values())
     # Display Result
     common_doc_ids = set.intersection(
         *(set(posting.keys()) for posting in postings))  # perform intersection to get common docs
@@ -45,7 +49,8 @@ def perform_phrase_search(query):
 
 def perform_proximity_search(tokens, PROX):
     # tokens=pre_process(tokens)
-    postings = fetch_postings(tokens)
+    # postings = fetch_postings(tokens)
+    postings = list(get_index(tokens).values())
     # Display Result
     common_doc_ids = set.intersection(
         *(list(posting.keys()) for posting in postings))  # perform intersection to get common docs
@@ -97,29 +102,30 @@ def boolean_search(tokens, doc_ids):
             word_for_phrase.clear()
             proximity = False
         elif token == '"':
-            if (not phrase):  # start of the phrase is detected
+            if not phrase:  # start of the phrase is detected
                 phrase = True
             else:  # end of the phrase is detected search is performed
                 current_result &= perform_phrase_search(word_for_phrase)
                 word_for_phrase.clear()
                 phrase = False
-        elif (phrase or proximity):
-            word_for_phrase.append(
-                token)  # if phrase or proximity search is being activated the words are added to the list until the end is detected
-        elif (hashtag):
+        elif phrase or proximity:
+            word_for_phrase.append(token)  # if phrase or proximity search is being activated the words are added to
+            # the list until the end is detected
+        elif hashtag:
             distance = int(token)  # distance is set
             hashtag = False
         else:
-            postings = r.hgetall(token)
+            postings = get_index([token])[token]
+            # postings = r.hgetall(token)
             # dict_word=positional_index.get(token)
             if postings is not None:  # word exist in the postings
                 posting_numeric = np.array(list(postings.keys()), dtype=int)
                 term_postings = set(list(posting_numeric))
             else:
                 term_postings = set()
-            if (len(operators) == 0):
+            if len(operators) == 0:
                 current_result &= term_postings  # This is made for the first word
-            while (len(operators) > 0):
+            while len(operators) > 0:
                 operator = operators.pop()
                 # perform operations in order of popping
                 if operator == "AND":
@@ -129,4 +135,3 @@ def boolean_search(tokens, doc_ids):
                 elif operator == "NOT":
                     term_postings = doc_ids - term_postings
     return list(current_result)
-

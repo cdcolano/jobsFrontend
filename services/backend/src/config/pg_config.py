@@ -35,7 +35,7 @@ class Database:
                     password=self.password,
                     database=self.database
                 )
-                logger.info("Database pool connectionn opened")
+                logger.info("Database pool connection opened.")
 
             except Exception as e:
                 logger.exception(e)
@@ -57,6 +57,6 @@ class Database:
         if not self._connection_pool:
             try:
                 await self._connection_pool.close()
-                logger.info("Database pool connection closed")
+                logger.info("Database pool connection closed.")
             except Exception as e:
                 logger.exception(e)

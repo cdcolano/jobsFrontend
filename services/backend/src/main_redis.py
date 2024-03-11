@@ -1,5 +1,4 @@
 import time
-import regex
 import nltk
 import uvicorn
 import schedule
@@ -15,13 +14,16 @@ from .config.pg_config import Database
 from .utils.thesaurus import job_posting_thesaurus
 from .utils.dateparser import parse_date
 from .searchService import search
+from .postgresService import get_database_constants
 
+load_dotenv()
+
+nltk.download('stopwords')
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('uvicorn')
 
 app = FastAPI()
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -31,11 +33,29 @@ app.add_middleware(
 )
 
 
+async def update_database_info(db: Database = None):
+    try:
+        if db is not None:
+            app.state.N, app.state.DOC_IDS, app.state.ID2DATE = await get_database_constants(db, app.state.parsed_cache)
+        else:
+            app.state.N, app.state.DOC_IDS, app.state.ID2DATE = await get_database_constants(app.state.db, app.state.parsed_cache)
+        logger.info(f'Updated database info.')
+    except Exception as e:
+        logger.exception(e)
+
+
 @app.on_event("startup")
 async def startup_event():
+    app.state.parsed_cache = {}
+    app.state.parsed_cache = {"": parse_date("0001-01-01", datetime.now(), app.state.parsed_cache)}
+    logger.info('Created app state parsed-dates cache.')
+
     database_instance = Database()
     await database_instance.connect()
+    await update_database_info(database_instance)
     app.state.db = database_instance
+    logger.info('Created database connection pool.')
+
     logger.info("Server Startup")
 
 
@@ -148,31 +168,19 @@ async def do_search(query: str, request: Request, page: int = 1):
 #         # Wait for 24 hours (86400 seconds)
 
 
-load_dotenv()
+# DOC_IDS = []
+# N = 0
+# ID2DATE = {}
 
-nltk.download('stopwords')
+# CURRENT_RESULT = []
+# stemmed_languages = ["arabic", "danish", "dutch", "english", "finnish", "french", "german", "hungarian", "italian",
+#                      "norwegian", "portuguese", "romanian", "russian", "spanish", "swedish"]
+# non_alpha_pattern = regex.compile(r'\p{P}')
+#
+# non_alpha_pattern_boolean = regex.compile(r'[^\w\s#"()]+')
+# logical_operators = {'AND', 'OR', 'NOT'}
 
-
-DOC_IDS = []
-N = 0
-ID2DATE = {}
-
-parsed_cache = {}
-
-# min_date_value = parse_date("0001-01-01", datetime.now(), parsed_cache)
-# parsed_cache = {"": min_date_value}
-
-CURRENT_RESULT = []
-compiled_patterns = {}
-stemmers = {}
-stemmed_languages = ["arabic", "danish", "dutch", "english", "finnish", "french", "german", "hungarian", "italian",
-                     "norwegian", "portuguese", "romanian", "russian", "spanish", "swedish"]
-non_alpha_pattern = regex.compile(r'\p{P}')
-
-non_alpha_pattern_boolean = regex.compile(r'[^\w\s#"()]+')
-logical_operators = {'AND', 'OR', 'NOT'}
-
-# schedule.every().day.at("06:00").do(update_database_info)
+schedule.every().day.at("06:00").do(update_database_info)
 
 # # update_database_info()
 # thread = Thread(target=run_periodically)
