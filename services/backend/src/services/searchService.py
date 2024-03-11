@@ -4,10 +4,10 @@ from numpy import log10
 from logging import getLogger
 from fastapi import Request
 
-from .utils.preprocessing import preprocess_query, BOOL_OPERATORS
-from .utils.constants import RESULTS_PAGE_SIZE
+from ..utils.preprocessing import preprocess_query, BOOL_OPERATORS
+from ..utils.constants import RESULTS_PAGE_SIZE
 from .redisService import get_index
-from .booleanSearch import boolean_search
+from .booleanSearchService import boolean_search
 
 logger = getLogger('uvicorn')
 

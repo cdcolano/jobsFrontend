@@ -3,7 +3,7 @@ import logging
 
 from itertools import product
 
-from .utils.preprocessing import preprocess
+from ..utils.preprocessing import preprocess
 from .redisService import get_index
 
 logger = logging.getLogger('uvicorn')
@@ -116,6 +116,7 @@ def boolean_search(tokens, doc_ids):
             hashtag = False
         else:
             postings = get_index([token])[token]
+            # logger.info(postings)
             # postings = r.hgetall(token)
             # dict_word=positional_index.get(token)
             if postings is not None:  # word exist in the postings

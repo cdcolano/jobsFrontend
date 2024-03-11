@@ -1,6 +1,6 @@
 import redis
 
-from .config.redis_config import pool
+from ..config.redis_config import pool
 
 
 def get_index(terms: list[str]) -> dict:

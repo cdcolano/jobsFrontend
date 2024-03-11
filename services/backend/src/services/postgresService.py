@@ -3,8 +3,8 @@ import json
 from logging import getLogger
 from datetime import datetime
 
-from .config.pg_config import Database
-from .utils.dateparser import parse_date
+from ..config.pg_config import Database
+from ..utils.dateparser import parse_date
 
 logger = getLogger('uvicorn')
 
