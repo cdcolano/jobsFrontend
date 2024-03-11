@@ -31,12 +31,12 @@ async def search(query, request: Request, page: int = 1, size: int = RESULTS_PAG
     _offset = (page * size) - size
     # BOOLEAN SEARCH
     if re.search('|'.join(BOOL_OPERATORS), ' '.join(_query)):
-        return boolean_search(query, request.app.state.DOC_IDS)
+        doc_ids = boolean_search(query, request.app.state.DOC_IDS)
     # RANKED SEARCH
     else:
         # n_docs = await request.app.state.db.fetch_rows('SELECT count(*) as count FROM jobs')
         doc_ids = ranked_search(_query, request.app.state.N, request.app.state.ID2DATE)
-        results = await request.app.state.db.fetch_rows(
-            f'SELECT * FROM jobs WHERE id in ({",".join([str(d) for d in doc_ids[_offset:_offset + size]])})'
-        )
-        return results
+    results = await request.app.state.db.fetch_rows(
+        f'SELECT * FROM jobs WHERE id in ({",".join([str(d) for d in doc_ids[_offset:_offset + size]])})'
+    )
+    return results

@@ -1,12 +1,12 @@
 import numpy as np
-import logging
 
 from itertools import product
+from logging import getLogger
 
-from ..utils.preprocessing import preprocess
+from ..utils.preprocessing import preprocess_query
 from .redisService import get_index
 
-logger = logging.getLogger('uvicorn')
+logger = getLogger('uvicorn')
 
 tokenization_regex_boolean = r'(\bAND\b|\bOR\b|\bNOT\b|\b\w+\b|[#"\(\)])'
 
@@ -72,13 +72,13 @@ def perform_proximity_search(tokens, PROX):
         return common_doc_ids
 
 
-def boolean_search(tokens, doc_ids):
+def boolean_search(tokens, doc_ids) -> list:
     ######## IMPORTANT#####
     # NOT REMOVING #,(,),""
     # CHECKING IF #WORK
     # COMPROBAR QUE EL TDIDF SE ORDENA DESCENDENTEMENTE Y ELIMINAR OR AND Y ETC DE LA REGEX
 
-    tokens = preprocess(tokens, tokenization_regex=tokenization_regex_boolean)
+    tokens = preprocess_query(tokens.split(' '))
     # doc_ids=set(getAllDocs(positional_index)) #if query is empty all docs are retrived
     current_result = set(doc_ids)
     operators = []

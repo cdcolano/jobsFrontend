@@ -81,7 +81,7 @@ def preprocess(
         """Filter stop words in list of strings"""
         if not boolean:
             return [t for t in term_list if t not in stopwords.words(language)]
-        return [t for t in term_list if t not in stopwords.words(language).update(BOOL_OPERATORS)]
+        return [t for t in term_list if t not in stopwords.words(language).extend(BOOL_OPERATORS)]
 
     def stem_words(term_list: list[str], language: str) -> list[str]:
         """Apply stemming to list of strings"""
