@@ -10,21 +10,8 @@ logger = getLogger('uvicorn')
 
 tokenization_regex_boolean = r'(\bAND\b|\bOR\b|\bNOT\b|\b\w+\b|[#"\(\)])'
 
-# r = redis.Redis(**REDIS_CONNECTION_CONFIG)
-#
-# def fetch_token(token):
-#     return r.hgetall(token)
-#
-#
-# def fetch_postings(query):
-#     with ThreadPoolExecutor(max_workers=10) as executor:
-#         postings_list = list(executor.map(fetch_token, query))
-#     return postings_list
-
 
 def perform_phrase_search(query):
-    # tokens=pre_process(query)
-    # postings = fetch_postings(query)
     postings = list(get_index(query).values())
     # Display Result
     common_doc_ids = set.intersection(
@@ -47,9 +34,7 @@ def perform_phrase_search(query):
         return common_doc_ids
 
 
-def perform_proximity_search(tokens, PROX):
-    # tokens=pre_process(tokens)
-    # postings = fetch_postings(tokens)
+def perform_proximity_search(tokens, proximity_distance):
     postings = list(get_index(tokens).values())
     # Display Result
     common_doc_ids = set.intersection(
@@ -61,7 +46,7 @@ def perform_proximity_search(tokens, PROX):
             combinations = list(
                 product(*positions))  # calculate all combinations of positions of different tokens in a doc
             for combination in combinations:
-                valid = all([abs(combination[i] - combination[i + 1]) <= PROX for i in
+                valid = all([abs(combination[i] - combination[i + 1]) <= proximity_distance for i in
                              range(len(combination) - 1)])  # checking if the distance is lower than the max distance
                 if valid:
                     final_doc_ids.add(int(doc_id))
@@ -73,13 +58,7 @@ def perform_proximity_search(tokens, PROX):
 
 
 def boolean_search(tokens, doc_ids) -> list:
-    ######## IMPORTANT#####
-    # NOT REMOVING #,(,),""
-    # CHECKING IF #WORK
-    # COMPROBAR QUE EL TDIDF SE ORDENA DESCENDENTEMENTE Y ELIMINAR OR AND Y ETC DE LA REGEX
-
     tokens = preprocess_query(tokens.split(' '))
-    # doc_ids=set(getAllDocs(positional_index)) #if query is empty all docs are retrived
     current_result = set(doc_ids)
     operators = []
     word_for_phrase = []
@@ -87,9 +66,9 @@ def boolean_search(tokens, doc_ids) -> list:
     distance = 0
     proximity = False
     hashtag = False
-    # boolean search
-    # Dificulty while separating operators (boolean, proximity)
 
+    # boolean search
+    # Difficulty while separating operators (boolean, proximity)
     for token in tokens:
         if token in ["AND", "OR", "NOT"]:
             operators.append(token)  # appended to the stack of operators
@@ -116,9 +95,6 @@ def boolean_search(tokens, doc_ids) -> list:
             hashtag = False
         else:
             postings = get_index([token])[token]
-            # logger.info(postings)
-            # postings = r.hgetall(token)
-            # dict_word=positional_index.get(token)
             if postings is not None:  # word exist in the postings
                 posting_numeric = np.array(list(postings.keys()), dtype=int)
                 term_postings = set(list(posting_numeric))
